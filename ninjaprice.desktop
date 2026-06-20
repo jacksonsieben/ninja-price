@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=NinjaPrice
+Exec=*path-to-repo*/ninja-price/ninjaprice
+Icon=*path-to-repo*/ninja-price/assets/icon.png
+Comment=Monitor de preços em background
+X-GNOME-Autostart-enabled=true
+Terminal=false
+Categories=Utility;
