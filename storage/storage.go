@@ -6,10 +6,16 @@ import (
 	"time"
 )
 
+type PricePoint struct {
+	Price float64 `json:"price"`
+	Date  string  `json:"date"`
+}
+
 type HistoryItem struct {
 	LastPrice   float64   `json:"last_price"`
 	LowestPrice float64   `json:"lowest_price"`
 	LastChecked time.Time `json:"last_checked"`
+	History     []PricePoint `json:"history"`
 }
 
 type History struct {

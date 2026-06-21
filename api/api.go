@@ -27,6 +27,8 @@ func (a *API) Start(port int) {
 	http.HandleFunc("/items", a.handleItems)
 	http.HandleFunc("/config", a.handleConfig)
 
+	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
+
 	addr := fmt.Sprintf(":%d", port)
 	log.Printf("Starting API server on http://localhost%s\n", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
@@ -73,6 +75,72 @@ func (a *API) handleItems(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id", http.StatusBadRequest)
+			return
+		}
+
+		cfg, err := config.LoadConfig(a.configPath)
+		if err != nil {
+			http.Error(w, "Error loading config", http.StatusInternalServerError)
+			return
+		}
+
+		var newItems []config.Item
+		for _, item := range cfg.Items {
+			if item.ID != id {
+				newItems = append(newItems, item)
+			}
+		}
+		cfg.Items = newItems
+
+		if err := config.SaveConfig(a.configPath, cfg); err != nil {
+			http.Error(w, "Error saving config", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+
+	if r.Method == http.MethodPatch {
+		id := r.URL.Query().Get("id")
+		if id == "" {
+			http.Error(w, "Missing id", http.StatusBadRequest)
+			return
+		}
+
+		var update struct {
+			TargetPrice float64 `json:"target_price"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
+			http.Error(w, "Invalid request body", http.StatusBadRequest)
+			return
+		}
+
+		cfg, err := config.LoadConfig(a.configPath)
+		if err != nil {
+			http.Error(w, "Error loading config", http.StatusInternalServerError)
+			return
+		}
+
+		for i, item := range cfg.Items {
+			if item.ID == id {
+				cfg.Items[i].TargetPrice = update.TargetPrice
+				break
+			}
+		}
+
+		if err := config.SaveConfig(a.configPath, cfg); err != nil {
+			http.Error(w, "Error saving config", http.StatusInternalServerError)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		return
 	}

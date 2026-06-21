@@ -6,15 +6,7 @@
       "url": "https://www.pccomponentes.pt/monitor-asus-rog-strix-xg27aqdmgr-26-5-quad-hd-240hz-oled-0-03ms-g-sync-freesync-hdr10",
       "selector": "#pdp-price-current-container",
       "category": "Monitor",
-      "target_price": 600
-    },
-    {
-      "id": "monitor-msi-mpg-271qrx-26-5-wqhd-360hz-qd-oled-freesync-premium-pro-0-03ms-usb-c-recondicionado-pccomponentes-pt-7429",
-      "name": "Monitor MSI MPG 271QRX 26.5\" WQHD 360Hz QD-OLED FreeSync Premium Pro 0.03ms USB-C Recondicionado | PcComponentes.pt",
-      "url": "https://www.pccomponentes.pt/monitor-msi-mpg-271qrx-26-5-wqhd-360hz-qd-oled-freesync-premium-pro-0-03ms-usb-c?refurbished",
-      "selector": "#pdp-price-current-integer",
-      "category": "Monitor",
-      "target_price": 500
+      "target_price": 400
     }
   ]
 }

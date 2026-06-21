@@ -119,6 +119,16 @@ func checkPrices() {
 			histItem.LowestPrice = currentPrice
 		}
 		histItem.LastChecked = time.Now()
+
+		novoPonto := storage.PricePoint{
+			Price: currentPrice,
+			Date:  time.Now().Format("02/01"), 
+		}
+		histItem.History = append(histItem.History, novoPonto)
+
+		if len(histItem.History) > 14 {
+			histItem.History = histItem.History[1:]
+		}
 	}
 
 	if err := storage.SaveHistory(historyPath, hist); err != nil {

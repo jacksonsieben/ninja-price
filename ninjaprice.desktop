@@ -1,7 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=NinjaPrice
+Path=*path-to-repo*/ninja-price/ninjaprice
 Exec=*path-to-repo*/ninja-price/ninjaprice
+# optionally you can have the logs to somewhere
+# Exec=/bin/bash -c '*path-to-repo*/ninja-price/ninjaprice >> *path-to-repo*/ninja-price/ninjaprice.log 2>&1'
 Icon=*path-to-repo*/ninja-price/assets/icon.png
 Comment=Monitor de preços em background
 X-GNOME-Autostart-enabled=true
