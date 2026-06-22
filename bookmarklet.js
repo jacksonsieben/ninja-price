@@ -15,19 +15,45 @@ javascript:(function(){
         e.target.classList.remove('ninja-picker-hover');
     }
 
-    /* Tenta encontrar o melhor seletor CSS (dando prioridade a IDs) */
+    /* ALGORITMO MELHORADO PARA SELETORES CURTOS E ROBUSTOS */
     function getOptimalSelector(el) {
-        if (el.id) return '#' + el.id;
         var path = [];
-        while (el.nodeType === Node.ELEMENT_NODE && el.tagName !== 'HTML') {
-            var name = el.tagName.toLowerCase();
-            if (el.id) { name += '#' + el.id; path.unshift(name); break; }
+        /* Lista de atributos que os programadores usam para testes ou SEO. São "âncoras" perfeitas. */
+        var preferredAttrs = ['data-test-id', 'data-testid', 'data-cy', 'itemprop', 'data-price'];
+        
+        while (el && el.nodeType === Node.ELEMENT_NODE && el.tagName !== 'HTML' && el.tagName !== 'BODY') {
+            var selector = el.tagName.toLowerCase();
+            
+            /* 1. Tem ID? (Ignora IDs automáticos que sejam só números ou muito grandes) */
+            if (el.id && !/^\d+$/.test(el.id)) {
+                path.unshift(selector + '#' + el.id);
+                break; /* IDs (normais) são únicos, podemos parar de subir na árvore! */
+            }
+            
+            /* 2. Tem atributos confiáveis? (ex: data-test-id="price") */
+            var foundAttr = false;
+            for (var i = 0; i < preferredAttrs.length; i++) {
+                var attr = preferredAttrs[i];
+                if (el.hasAttribute(attr)) {
+                    selector += '[' + attr + '="' + el.getAttribute(attr) + '"]';
+                    foundAttr = true;
+                    break;
+                }
+            }
+            
+            if (foundAttr) {
+                path.unshift(selector);
+                break; /* Achámos uma âncora robusta! Pára de subir para não gerar um seletor gigante. */
+            }
+
+            /* 3. Fallback: Se não tem âncora, descobre a posição dele em relação aos irmãos */
             var siblings = Array.from(el.parentNode.children).filter(function(e) { return e.tagName === el.tagName; });
             if (siblings.length > 1) {
                 var index = siblings.indexOf(el) + 1;
-                name += ':nth-of-type(' + index + ')';
+                selector += ':nth-of-type(' + index + ')';
             }
-            path.unshift(name);
+            
+            path.unshift(selector);
             el = el.parentNode;
         }
         return path.join(' > ');
@@ -54,7 +80,11 @@ javascript:(function(){
         modalHtml += '<input id="np-cat" type="text" placeholder="Ex: Periféricos" style="width:100%;padding:8px;box-sizing:border-box;border:1px solid #ccc;border-radius:6px;margin-top:4px;">';
         modalHtml += '<label style="display:block;margin-top:12px;font-size:13px;font-weight:bold;">Avisar quando for menor que (€):</label>';
         modalHtml += '<input id="np-target" type="number" step="0.01" placeholder="Ex: 350.00" style="width:100%;padding:8px;box-sizing:border-box;border:1px solid #ccc;border-radius:6px;margin-top:4px;">';
-        modalHtml += '<input type="hidden" id="np-sel" value="' + sel + '">';
+        
+        /* Adicionada uma caixa de texto visível para o seletor gerado (útil para debug). As aspas são escapadas para não quebrar o HTML. */
+        modalHtml += '<label style="display:block;margin-top:12px;font-size:13px;font-weight:bold;">Seletor CSS:</label>';
+        modalHtml += '<input id="np-sel" type="text" value="' + sel.replace(/"/g, '&quot;') + '" style="width:100%;padding:8px;box-sizing:border-box;border:1px solid #ccc;border-radius:6px;margin-top:4px;font-family:monospace;font-size:11px;color:#666;">';
+        
         modalHtml += '<input type="hidden" id="np-url" value="' + url + '">';
         modalHtml += '<div style="margin-top:20px;display:flex;justify-content:space-between;">';
         modalHtml += '<button id="np-cancel" style="padding:10px 15px;cursor:pointer;border:none;background:#f0f2f5;border-radius:6px;color:#555;font-weight:bold;">Cancelar</button>';
@@ -74,7 +104,7 @@ javascript:(function(){
                 id: document.getElementById('np-name').value.toLowerCase().replace(/[^a-z0-9]+/g, '-') + "-" + Date.now().toString().slice(-4),
                 name: document.getElementById('np-name').value,
                 url: document.getElementById('np-url').value,
-                selector: document.getElementById('np-sel').value,
+                selector: document.getElementById('np-sel').value, /* Lê do input editável */
                 category: document.getElementById('np-cat').value || "Misc",
                 target_price: parseFloat(document.getElementById('np-target').value) || 0
             };
