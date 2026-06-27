@@ -22,4 +22,5 @@ func Notify(title, message string, sticky bool) {
 	if err := cmd.Run(); err != nil {
 		log.Printf("Failed to send notification: %v", err)
 	}
+	log.Printf("Notification sent: %s - %s", title, message)
 }

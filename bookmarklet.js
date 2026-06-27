@@ -101,12 +101,24 @@ javascript:(function(){
             btn.innerText = 'A enviar...';
             
             var payload = {
-                id: document.getElementById('np-name').value.toLowerCase().replace(/[^a-z0-9]+/g, '-') + "-" + Date.now().toString().slice(-4),
-                name: document.getElementById('np-name').value,
-                url: document.getElementById('np-url').value,
-                selector: document.getElementById('np-sel').value, /* Lê do input editável */
-                category: document.getElementById('np-cat').value || "Misc",
-                target_price: parseFloat(document.getElementById('np-target').value) || 0
+              id:
+                document
+                  .getElementById("np-name")
+                  .value.toLowerCase()
+                  .replace(/[^a-z0-9]+/g, "-") +
+                "-" +
+                Date.now().toString().slice(-4),
+              name: document.getElementById("np-name").value,
+              url: document.getElementById("np-url").value,
+              selector:
+                document.getElementById("np-sel")
+                  .value /* Lê do input editável */,
+              category: document.getElementById("np-cat").value || "Misc",
+              target_price:
+                parseFloat(document.getElementById("np-target").value) || 0,
+              active: true,
+              alert_any_price_drop: false,
+              sticky: false,
             };
 
             /* Envia os dados para a API Go */

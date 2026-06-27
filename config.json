@@ -1,12 +1,17 @@
 {
+  "cooldown_period": 30,
   "items": [
     {
-      "id": "asus_oled_pccom",
-      "name": "Monitor Asus ROG Strix XG27AQDMGR",
-      "url": "https://www.pccomponentes.pt/monitor-asus-rog-strix-xg27aqdmgr-26-5-quad-hd-240hz-oled-0-03ms-g-sync-freesync-hdr10",
-      "selector": "#pdp-price-current-container",
-      "category": "Monitor",
-      "target_price": 400
+      "id": "elden-ring-shadow-of-the-erdtree-edition-ps5-amazon-es-videogames-8179",
+      "name": "ELDEN RING Shadow of the Erdtree Edition (PS5) : Amazon.es: Videogames",
+      "url": "https://www.amazon.es/-/en/gp/product/B0CW3QMQW8?smid=A3SF15JGSPZVBZ\u0026psc=1",
+      "selector": ".a-price-whole",
+      "category": "Jogo",
+      "target_price": 60,
+      "active": true,
+      "alert_any_price_drop": false,
+      "sticky": true,
+      "last_notified": "2026-06-27T16:49:02.863505291+01:00"
     }
   ]
 }

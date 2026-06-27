@@ -8,7 +8,7 @@ import (
 
 type PricePoint struct {
 	Price float64 `json:"price"`
-	Date  string  `json:"date"`
+	Date  time.Time  `json:"date"`
 }
 
 type HistoryItem struct {

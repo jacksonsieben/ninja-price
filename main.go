@@ -86,6 +86,10 @@ func checkPrices() {
 	}
 
 	for _, item := range cfg.Items {
+		if !item.Active {
+			log.Printf("Skipping %s as alert_price is disabled.", item.Name)
+			continue // Skip items that don't have alert_price enabled
+		}
 		log.Printf("Checking %s...", item.Name)
 		currentPrice, err := scraper.ScrapePrice(item.URL, item.Selector)
 		if err != nil {
@@ -101,16 +105,29 @@ func checkPrices() {
 			hist.Items[item.ID] = histItem
 		}
 
+		canNotify := time.Since(item.LastNotified) > time.Duration(cfg.CooldownPeriod) * time.Minute
+
 		// Check conditions for notifications
-		if item.TargetPrice > 0 && currentPrice <= item.TargetPrice {
-			msg := fmt.Sprintf("Target price reached! Currently %.2f", currentPrice)
-			// Target price reaching is important, we pass true to make it a sticky notification
-			notifier.Notify("Price Alert: "+item.Name, msg, true)
-		} else if exists && histItem.LastPrice > 0 && currentPrice < histItem.LastPrice {
-			diff := histItem.LastPrice - currentPrice
-			msg := fmt.Sprintf("Price dropped by %.2f! Now %.2f", diff, currentPrice)
-			// Regular price drop can also be sticky, or you can change this to false for transient notifications
-			notifier.Notify("Price Drop: "+item.Name, msg, true)
+		if canNotify {
+			notified := false
+			if item.TargetPrice > 0 && currentPrice <= item.TargetPrice {
+				msg := fmt.Sprintf("Target price reached! Currently %.2f", currentPrice)
+				// Target price reaching is important, we pass true to make it a sticky notification
+				notifier.Notify("Price Alert: "+item.Name, msg, item.Sticky)
+				notified = true
+			} else if item.AlertAnyPriceDrop  && (exists && histItem.LastPrice > 0 && currentPrice < histItem.LastPrice) {
+				diff := histItem.LastPrice - currentPrice
+				msg := fmt.Sprintf("Price dropped by %.2f! Now %.2f", diff, currentPrice)
+				// Regular price drop can also be sticky, or you can change this to false for transient notifications
+				notifier.Notify("Price Drop: "+item.Name, msg, false)
+				notified = true
+			}
+			if notified {
+				log.Printf("Notification sent for %s. Current price: %.2f", item.Name, currentPrice)
+				if err := config.UpdateLastNotified(configPath, item.ID); err != nil {
+					log.Printf("Error updating last_notified for %s: %v", item.Name, err)
+				}
+			}
 		}
 
 		// Update history
@@ -120,15 +137,17 @@ func checkPrices() {
 		}
 		histItem.LastChecked = time.Now()
 
-		novoPonto := storage.PricePoint{
+		pricePoint := storage.PricePoint{
 			Price: currentPrice,
-			Date:  time.Now().Format("02/01"), 
+			Date:  time.Now(), 
 		}
-		histItem.History = append(histItem.History, novoPonto)
+		histItem.History = append(histItem.History, pricePoint)
 
 		if len(histItem.History) > 14 {
 			histItem.History = histItem.History[1:]
 		}
+
+		hist.Items[item.ID] = histItem
 	}
 
 	if err := storage.SaveHistory(historyPath, hist); err != nil {

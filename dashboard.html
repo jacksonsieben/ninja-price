@@ -5,14 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>🥷 NinjaPrice Dashboard</title>
     
-    <!-- Favicon do NinjaPrice -->
     <link rel="icon" type="image/png" href="assets/icon.png" />
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-    <!-- Chart.js para os gráficos de histórico -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <script>
@@ -37,12 +33,10 @@
       .ninja-glow {
         box-shadow: 0 0 15px rgba(0, 200, 83, 0.1);
       }
-      /* Remove contornos do canvas do Chart.js */
       canvas { outline: none; }
     </style>
   </head>
-  <body class="min-h-screen p-6 md:p-12">
-    <!-- Header -->
+  <body class="min-h-screen p-6 md:p-12 relative">
     <header class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center mb-10 border-b border-gray-800 pb-6">
       <div class="flex items-center gap-3">
         <div class="bg-ninja text-black p-3 rounded-xl">
@@ -61,17 +55,61 @@
       </div>
     </header>
 
-    <!-- Grid de Produtos -->
     <main class="max-w-6xl mx-auto">
       <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <!-- Os cards serão injetados aqui pelo JavaScript -->
-      </div>
+        </div>
     </main>
+
+    <div id="edit-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-card border border-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+            <h2 class="text-xl font-bold text-white mb-5 flex items-center gap-2">
+                <i data-lucide="settings" class="w-5 h-5 text-ninja"></i> Editar Configurações
+            </h2>
+            
+            <form id="edit-form" onsubmit="submitEditForm(event)">
+                <input type="hidden" id="edit-id">
+
+                <div class="mb-4">
+                    <label class="block text-sm text-gray-400 mb-1">Nome do Produto</label>
+                    <input type="text" id="edit-name" class="w-full bg-darker border border-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:border-ninja transition-colors" required>
+                </div>
+
+                <div class="mb-5">
+                    <label class="block text-sm text-gray-400 mb-1">Preço Alvo (€)</label>
+                    <input type="number" id="edit-target" step="0.01" class="w-full bg-darker border border-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:border-ninja transition-colors" required>
+                </div>
+
+                <div class="space-y-3 mb-6 bg-darker p-4 rounded-lg border border-gray-800">
+                    <label class="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" id="edit-active" class="w-4 h-4 accent-ninja bg-darker border-gray-700 rounded">
+                        <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Rastreamento Ativo</span>
+                    </label>
+
+                    <label class="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" id="edit-drop" class="w-4 h-4 accent-ninja bg-darker border-gray-700 rounded">
+                        <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Alertar qualquer queda de preço</span>
+                    </label>
+
+                    <label class="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" id="edit-sticky" class="w-4 h-4 accent-ninja bg-darker border-gray-700 rounded">
+                        <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Notificação Fixa (Sticky no ecrã)</span>
+                    </label>
+                </div>
+
+                <div class="flex justify-end gap-3 pt-4 border-t border-gray-800">
+                    <button type="button" onclick="closeModal()" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">Cancelar</button>
+                    <button type="submit" class="px-4 py-2 text-sm bg-ninja text-black font-semibold rounded-lg hover:bg-[#00e65c] transition-colors">Salvar Alterações</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <script>
       // ---------------------------------------------------------
-      // FUNÇÕES UTILITÁRIAS
+      // ESTADO GLOBAL E UTILITÁRIOS
       // ---------------------------------------------------------
+      window.itemsStore = {};
+
       const formatMoney = (value) => {
         if (value === undefined || value === null) return "---";
         return new Intl.NumberFormat("pt-PT", {
@@ -81,35 +119,85 @@
       };
 
       // ---------------------------------------------------------
-      // AÇÕES DA API (Editar Alvo e Apagar)
+      // MODAL E AÇÕES DA API (PUT e DELETE)
       // ---------------------------------------------------------
       
-      async function editTargetPrice(id, currentTarget) {
-        const newTarget = prompt(`Novo preço alvo para este item (€):`, currentTarget || 0);
-        if (newTarget === null) return; // Utilizador cancelou
+      function openModal(id) {
+          const item = window.itemsStore[id];
+          if (!item) return;
+
+          // Preenche os campos do formulário
+          document.getElementById('edit-id').value = item.id;
+          document.getElementById('edit-name').value = item.name;
+          document.getElementById('edit-target').value = item.target_price || 0;
+          document.getElementById('edit-active').checked = item.active !== undefined ? item.active : true;
+          document.getElementById('edit-drop').checked = item.alert_any_price_drop || false;
+          document.getElementById('edit-sticky').checked = item.sticky || false;
+
+          // Exibe o modal
+          document.getElementById('edit-modal').classList.remove('hidden');
+      }
+
+      function closeModal() {
+          document.getElementById('edit-modal').classList.add('hidden');
+      }
+
+      async function submitEditForm(event) {
+        event.preventDefault(); // Impede o formulário de recarregar a página
         
-        const parsedTarget = parseFloat(newTarget.replace(',', '.'));
-        if (isNaN(parsedTarget)) {
-            alert("Por favor, introduza um número válido.");
-            return;
-        }
+        const id = document.getElementById('edit-id').value;
+        const payload = {
+            name: document.getElementById('edit-name').value,
+            target_price: parseFloat(document.getElementById('edit-target').value),
+            active: document.getElementById('edit-active').checked,
+            alert_any_price_drop: document.getElementById('edit-drop').checked,
+            sticky: document.getElementById('edit-sticky').checked
+        };
 
         try {
-            // Chamada PATCH para a sua API Go atualizar o config.json
             const res = await fetch(`/items?id=${id}`, {
-                method: 'PATCH',
+                method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ target_price: parsedTarget })
+                body: JSON.stringify(payload)
             });
             
             if(res.ok) {
-                loadDashboard(); // Recarrega os dados visuais sem cache
+                closeModal();
+                loadDashboard(); 
             } else {
                 const text = await res.text();
-                alert("Erro ao atualizar o preço alvo: " + text);
+                alert("Erro ao atualizar o item: " + text);
             }
         } catch(e) {
             alert("Erro de conexão ao servidor NinjaPrice.");
+        }
+      }
+
+      async function toggleActive(id) {
+        const item = window.itemsStore[id];
+        if (!item) return;
+
+        const newState = !(item.active !== undefined ? item.active : true);
+
+        const payload = {
+            target_price: item.target_price,
+            name: item.name,
+            active: newState,
+            alert_any_price_drop: item.alert_any_price_drop || false,
+            sticky: item.sticky || false
+        };
+
+        try {
+            const res = await fetch(`/items?id=${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            if(res.ok) loadDashboard();
+            else alert("Erro ao atualizar estado.");
+        } catch(e) {
+            alert("Erro de conexão ao servidor.");
         }
       }
 
@@ -117,11 +205,10 @@
         if (!confirm(`Tem a certeza que deseja remover "${name}" do rastreamento?`)) return;
 
         try {
-            // Chamada DELETE para a sua API Go apagar do config.json
             const res = await fetch(`/items?id=${id}`, { method: 'DELETE' });
             
             if(res.ok) {
-                loadDashboard(); // Recarrega os dados visuais sem cache
+                loadDashboard(); 
             } else {
                 const text = await res.text();
                 alert("Erro ao remover o item: " + text);
@@ -137,8 +224,6 @@
 
       async function loadDashboard() {
         try {
-          // Usamos cache: 'no-store' e um timestamp dinâmico para forçar o browser 
-          // a ignorar totalmente o cache local em cada chamada
           const timestamp = new Date().getTime();
           const fetchOptions = { cache: "no-store" };
 
@@ -156,25 +241,41 @@
           const grid = document.getElementById("products-grid");
           grid.innerHTML = "";
           document.getElementById("total-items").innerText = configItems.length;
+          
+          window.itemsStore = {};
 
           configItems.forEach((item) => {
+            window.itemsStore[item.id] = item; 
+            
             const hist = historyItems[item.id] || {};
             const price = hist.last_price || hist.price || 0;
             const dateStr = hist.last_checked || hist.date || "---";
             const target = item.target_price || 0;
+            
+            const isActive = item.active !== undefined ? item.active : true;
 
             const card = document.createElement("div");
-            card.className = "bg-card border border-gray-800 rounded-2xl p-6 hover:border-ninja transition-colors duration-300 ninja-glow flex flex-col justify-between relative";
+            card.className = `bg-card border border-gray-800 rounded-2xl p-6 transition-all duration-300 flex flex-col justify-between relative ${isActive ? 'hover:border-ninja ninja-glow' : 'opacity-60 hover:opacity-100 grayscale-[30%]'}`;
+
+            let readableDate = "---";
+            if (dateStr !== "---") {
+                const dDate = new Date(dateStr);
+                readableDate = dDate.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' às ' + dDate.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+            }
 
             card.innerHTML = `
                 <div>
-                    <!-- Topo: Categoria e Botões de Ação -->
                     <div class="flex justify-between items-start mb-4">
-                        <span class="text-xs font-semibold px-3 py-1 bg-gray-800 text-gray-300 rounded-full">
-                            ${item.category || "Monitoramento"}
-                        </span>
+                        <div class="flex gap-2">
+                            <span class="text-xs font-semibold px-3 py-1 bg-gray-800 text-gray-300 rounded-full">
+                                ${item.category || "Monitoramento"}
+                            </span>
+                            <button onclick="toggleActive('${item.id}')" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors ${isActive ? 'bg-ninja/20 text-ninja hover:bg-ninja/30' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}" title="Clique para ativar/desativar alertas">
+                                ${isActive ? 'Ativo' : 'Pausado'}
+                            </button>
+                        </div>
                         <div class="flex gap-3 text-gray-500">
-                            <button onclick="editTargetPrice('${item.id}', ${target})" class="hover:text-ninja transition-colors" title="Editar Preço Alvo">
+                            <button onclick="openModal('${item.id}')" class="hover:text-white transition-colors" title="Editar Configurações">
                                 <i data-lucide="edit-2" class="w-4 h-4"></i>
                             </button>
                             <button onclick="deleteItem('${item.id}', '${item.name.replace(/'/g, "\\'")}')" class="hover:text-red-500 transition-colors" title="Remover Produto">
@@ -183,7 +284,6 @@
                         </div>
                     </div>
 
-                    <!-- Informações do Produto -->
                     <h3 class="text-lg font-medium text-white mb-4 line-clamp-2" title="${item.name}">${item.name}</h3>
                     
                     <div class="flex justify-between items-end mb-4">
@@ -193,21 +293,19 @@
                         </div>
                         <div class="text-right">
                             <span class="text-xs text-gray-500 block mb-1">Preço Alvo</span>
-                            <span class="text-sm font-semibold text-ninja">${formatMoney(target)}</span>
+                            <span class="text-sm font-semibold ${isActive ? 'text-ninja' : 'text-gray-500'}">${formatMoney(target)}</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Gráfico Chart.js em miniatura -->
                 <div class="w-full h-16 mb-4 mt-2">
                     <canvas id="chart-${item.id}"></canvas>
                 </div>
                 
-                <!-- Rodapé: Data e Link -->
                 <div class="pt-4 border-t border-gray-800 flex justify-between items-center">
-                    <div class="text-xs text-gray-500 flex items-center gap-1">
+                    <div class="text-xs text-gray-500 flex items-center gap-1" title="Última checagem: ${readableDate}">
                         <i data-lucide="clock" class="w-3 h-3"></i>
-                        ${dateStr.split("T")[0].split(" ")[0]}
+                        ${readableDate.split(' às ')[0]}
                     </div>
                     <a href="${item.url}" target="_blank" class="text-ninja hover:text-white transition-colors flex items-center gap-1 text-sm font-medium">
                         Loja <i data-lucide="external-link" class="w-4 h-4"></i>
@@ -221,26 +319,33 @@
             let prices = [];
 
             if (chartData.length > 0) {
-                // Lê os dados reais enviados pelo Go
-                labels = chartData.map(d => d.date);
+                labels = chartData.map(d => {
+                    const dt = new Date(d.date);
+                    return dt.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' }) + ' ' + 
+                           dt.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
+                });
                 prices = chartData.map(d => d.price);
                 
-                // Se só tivermos 1 ponto (primeiro rastreio), duplicamos para formar uma linha visual
                 if (chartData.length === 1) {
                     labels.unshift("Início");
                     prices.unshift(chartData[0].price);
                 }
             } else if (price > 0) {
-                // Fallback caso o histórico ainda não tenha o array gerado
                 labels = ["Hoje", "Hoje"];
                 prices = [price, price];
             }
 
             const ctx = document.getElementById(`chart-${item.id}`).getContext('2d');
             
+            let chartColor = isActive ? '#00C853' : '#6b7280';
             let gradient = ctx.createLinearGradient(0, 0, 0, 64);
-            gradient.addColorStop(0, 'rgba(0, 200, 83, 0.4)');
-            gradient.addColorStop(1, 'rgba(0, 200, 83, 0.0)');
+            if (isActive) {
+                gradient.addColorStop(0, 'rgba(0, 200, 83, 0.4)');
+                gradient.addColorStop(1, 'rgba(0, 200, 83, 0.0)');
+            } else {
+                gradient.addColorStop(0, 'rgba(107, 114, 128, 0.4)');
+                gradient.addColorStop(1, 'rgba(107, 114, 128, 0.0)');
+            }
 
             new Chart(ctx, {
                 type: 'line',
@@ -248,7 +353,7 @@
                     labels: labels,
                     datasets: [{
                         data: prices,
-                        borderColor: '#00C853',
+                        borderColor: chartColor,
                         backgroundColor: gradient,
                         borderWidth: 2,
                         pointRadius: 0,
@@ -260,10 +365,20 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false }, tooltip: { enabled: true } },
+                    plugins: { 
+                        legend: { display: false }, 
+                        tooltip: { 
+                            enabled: true,
+                            callbacks: {
+                                label: function(context) {
+                                    return formatMoney(context.parsed.y);
+                                }
+                            }
+                        } 
+                    },
                     scales: {
                         x: { display: false },
-                        y: { display: false, min: Math.min(...prices) * 0.95 }
+                        y: { display: false, min: Math.min(...prices) - (Math.min(...prices) * 0.05) }
                     },
                     interaction: { mode: 'index', intersect: false }
                 }
@@ -274,7 +389,7 @@
         } catch (error) {
           console.error("Erro ao carregar dados:", error);
           document.getElementById("products-grid").innerHTML =
-            '<p class="text-red-500 text-center col-span-full py-10">Erro ao carregar dados. Verifique se o backend do NinjaPrice está a correr na mesma porta.</p>';
+            '<p class="text-red-500 text-center col-span-full py-10">Erro ao carregar dados. Verifique se o backend está a correr.</p>';
         }
       }
 

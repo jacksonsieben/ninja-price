@@ -24,3 +24,6 @@ tidy:
 	@echo "==> A organizar dependências e formatar código..."
 	go fmt ./...
 	go mod tidy
+
+rebuild: clean build
+	@echo "==> Recompilação completa."
