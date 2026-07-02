@@ -14,9 +14,10 @@ import (
 )
 
 const (
-	configPath    = "config.json"
-	historyPath   = "prices_history.json"
-	checkInterval = 1 * time.Hour // Default background check interval
+	configPath    	= "config.json"
+	historyPath   	= "prices_history.json"
+	checkInterval 	= 1 * time.Hour // Default background check interval
+	apiPort	   		= 65452
 )
 
 func main() {
@@ -25,7 +26,7 @@ func main() {
 	// Start local API in background
 	go func() {
 		localAPI := api.NewAPI(configPath, historyPath)
-		localAPI.Start(8080)
+		localAPI.Start(apiPort)
 	}()
 
 	// Start systray
