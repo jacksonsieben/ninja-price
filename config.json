@@ -12,6 +12,18 @@
       "alert_any_price_drop": false,
       "sticky": true,
       "last_notified": "2026-06-27T16:49:02.863505291+01:00"
+    },
+    {
+      "id": "processador-amd-ryzen-7-9800x3d-8-n-cleos-4-7-ghz-base-5-2-ghz-turbo-overclocking-pcie-5-0-pccomponentes-pt-2617",
+      "name": "Processador AMD Ryzen 7 9800X3D 8 Núcleos 4,7 GHz Base 5,2 GHz Turbo Overclocking PCIe 5.0 | PcComponentes.pt",
+      "url": "https://www.pccomponentes.pt/processador-amd-ryzen-7-9800x3d-8-nucleos-4-7-ghz-base-5-2-ghz-turbo-overclocking-pcie-5-0?offer=6f738805-0e72-4cd4-a781-ac7314a83a9a",
+      "selector": "span#pdp-price-current-integer",
+      "category": "Misc",
+      "target_price": 500,
+      "active": true,
+      "alert_any_price_drop": false,
+      "sticky": false,
+      "last_notified": "0001-01-01T00:00:00Z"
     }
   ]
 }

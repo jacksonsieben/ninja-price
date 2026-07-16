@@ -92,11 +92,12 @@ func checkPrices() {
 			continue // Skip items that don't have alert_price enabled
 		}
 		log.Printf("Checking %s...", item.Name)
-		currentPrice, err := scraper.ScrapePrice(item.URL, item.Selector)
+		currentPrice, source, err := scraper.ScrapePrice(item.URL, item.Selector)
 		if err != nil {
 			log.Printf("Failed to scrape %s: %v", item.Name, err)
 			continue
 		}
+		log.Printf("Got price for %s via %s: %.2f", item.Name, source, currentPrice)
 
 		histItem, exists := hist.Items[item.ID]
 		if !exists {

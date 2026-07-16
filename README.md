@@ -29,7 +29,9 @@
 - **System Tray Integration:** Runs in your desktop environment's system tray (panel) for quick manual checks and graceful exits.
 - **Local JSON Storage:** Keeps track of prices cleanly in a local `prices_history.json` and sources items from `config.json`.
 - **Smart Data Sanitization:** Automatically converts global price formats (like `€ 476.00` or `476,00 €`) into standard numeric formats.
-- **Local Mini API & Bookmarklet:** Quickly add new products to monitor straight from your web browser using a custom Javascript Bookmarklet!
+- **Automatic Price Detection:** No CSS selector required for most stores — NinjaPrice reads `schema.org` JSON-LD/meta price data that most e-commerce sites already publish, with a small hardcoded fallback table for outliers (like Amazon) that don't.
+- **Lightweight-first Scraping:** Tries a fast, low-RAM HTTP fetch first and only launches a full headless browser when a site's bot protection (Cloudflare, DataDome, etc.) requires it.
+- **Local Mini API & Browser Extension:** Quickly add new products to monitor straight from your web browser using a small Manifest V3 extension that auto-detects the price, falling back to click-to-pick only when needed.
 
 ---
 
@@ -79,13 +81,15 @@ Here is an example format for `config.json`:
       "id": "playstation-5",
       "name": "Sony PlayStation 5 Console",
       "url": "https://example-store.com/ps5",
-      "selector": ".product-price-current",
+      "selector": "",
       "category": "Gaming",
       "target_price": 399.99
     }
   ]
 }
 ```
+
+`selector` is optional. Leave it as `""` to let NinjaPrice auto-detect the price on every check (via JSON-LD/meta structured data, or the known-site table). Only set it if you've manually picked a specific element with the browser extension, or auto-detection doesn't work for that store.
 
 ---
 
@@ -98,13 +102,15 @@ Start the application from your terminal or add it to your desktop startup appli
 ```
 A small icon will appear in your system tray. It will automatically re-check prices every hour. You can click the icon to manually force a **"Check Now"** or to **"Quit"**.
 
-### 2. Using the Browser Bookmarklet
-NinjaPrice exposes a lightweight local API on `http://localhost:8080/items`. To easily add items to your tracker from your web browser:
-1. Open the `bookmarklet.js` file in the repo.
-2. Copy the JavaScript code.
-3. In your Web Browser, create a new Bookmark, and paste the code into the "URL" or "Destination" field.
-4. Navigate to a product page on any store, click the bookmarklet, and answer the prompts (CSS Selector, Target Price, etc).
-5. The product will be pushed cleanly to your `config.json` without needing to restart the app!
+### 2. Installing the Browser Extension
+NinjaPrice exposes a lightweight local API on `http://localhost:65452`. The `extension/` folder contains a Manifest V3 browser extension that talks to it:
+
+1. Open `chrome://extensions` (or the equivalent in your Chromium-based browser), enable **Developer mode**.
+2. Click **Load unpacked** and select the `extension/` folder in this repo.
+3. Navigate to a product page on any store and click the NinjaPrice icon in your toolbar.
+4. If the price is auto-detected, fill in the category/target price and click **Salvar**.
+5. If it can't be auto-detected, click **Escolher preço na página** to click-to-pick the price element manually, same as before.
+6. The product will be pushed cleanly to your `config.json` without needing to restart the app!
 
 ---
 
@@ -113,9 +119,9 @@ NinjaPrice exposes a lightweight local API on `http://localhost:8080/items`. To 
 - [x] External Configuration File (`config.json`).
 - [x] System Tray Icon (Systray) background operations.
 - [x] Local Mini API.
-- [x] Browser Bookmarklet integration.
+- [x] Browser Extension integration with automatic price detection.
+- [x] Automated extraction of CSS selectors (via structured JSON-LD/meta data, no LLM needed).
 - [ ] Add history charting/visualizations for price variations over time.
-- [ ] Automated extraction of CSS selectors using LLMs.
 - [ ] Implement robust error retry backoffs for rate-limited stores.
 
 ---
@@ -143,5 +149,7 @@ Distributed under the MIT License. See `LICENSE` for more information.
 **Jackson Sieben** - [GitHub Profile](https://github.com/jacksonsieben)
 
 Libraries used in this project:
-- [PuerkitoBio/goquery](https://github.com/PuerkitoBio/goquery) - For easy HTML page scraping.
+- [PuerkitoBio/goquery](https://github.com/PuerkitoBio/goquery) - For easy HTML page scraping and structured-data extraction.
+- [bogdanfinn/tls-client](https://github.com/bogdanfinn/tls-client) - Browser-fingerprinted HTTP client used for the lightweight fetch tier.
+- [chromedp/chromedp](https://github.com/chromedp/chromedp) - Headless browser fallback for bot-protected stores.
 - [getlantern/systray](https://github.com/getlantern/systray) - For the background system tray integration.

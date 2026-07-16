@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/jacksonsieben/ninja-price/config"
+	"github.com/jacksonsieben/ninja-price/scraper"
 )
 
 type API struct {
@@ -26,6 +27,7 @@ func (a *API) Start(port int) {
 	http.HandleFunc("/history", a.handleHistory)
 	http.HandleFunc("/items", a.handleItems)
 	http.HandleFunc("/config", a.handleConfig)
+	http.HandleFunc("/detect", a.handleDetect)
 
 	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))
 
@@ -66,6 +68,42 @@ func (a *API) handleHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.ServeFile(w, r, a.historyPath)
+}
+
+// handleDetect tries to auto-detect a product's price and name from its URL,
+// so the extension can prefill the "add item" form without requiring the
+// user to click-to-pick a CSS selector.
+func (a *API) handleDetect(w http.ResponseWriter, r *http.Request) {
+	// Enable CORS for extension usage
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	pageURL := r.URL.Query().Get("url")
+	if pageURL == "" {
+		http.Error(w, "Missing url", http.StatusBadRequest)
+		return
+	}
+
+	price, source, name, err := scraper.DetectPrice(pageURL)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"price":  price,
+		"source": source,
+		"name":   name,
+	})
 }
 
 // handleItems atua apenas como um "Router" (Roteador), direcionando para a função correta
@@ -183,8 +221,8 @@ func (a *API) handleItemsPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if newItem.ID == "" || newItem.URL == "" || newItem.Selector == "" {
-		http.Error(w, "Missing required fields (id, url, selector)", http.StatusBadRequest)
+	if newItem.ID == "" || newItem.URL == "" {
+		http.Error(w, "Missing required fields (id, url)", http.StatusBadRequest)
 		return
 	}
 
