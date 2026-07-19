@@ -2,3 +2,6 @@
 ninjaprice
 
 *.log
+
+config.json
+prices_history.json
