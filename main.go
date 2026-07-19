@@ -105,6 +105,7 @@ func checkPrices() {
 		}
 
 		var bestPrice, previousBest float64
+		var bestOffer config.Offer
 		haveBest := false
 		havePreviousBest := false
 
@@ -126,6 +127,7 @@ func checkPrices() {
 
 			if !haveBest || price < bestPrice {
 				bestPrice = price
+				bestOffer = offer
 				haveBest = true
 			}
 		}
@@ -140,11 +142,13 @@ func checkPrices() {
 		if canNotify {
 			title, msg := "", ""
 			sticky := false
+			targetHit := false
 			if product.TargetPrice > 0 && bestPrice <= product.TargetPrice {
 				title = "Price Alert: " + product.Name
 				msg = fmt.Sprintf("Target price reached! Best price now %.2f", bestPrice)
 				// Target price reaching is important, we pass true to make it a sticky notification
 				sticky = product.Sticky
+				targetHit = true
 			} else if product.AlertAnyPriceDrop && havePreviousBest && bestPrice < previousBest {
 				diff := previousBest - bestPrice
 				title = "Price Drop: " + product.Name
@@ -154,7 +158,17 @@ func checkPrices() {
 			if title != "" {
 				notifier.Notify(title, msg, sticky)
 				if product.NotifyEmail {
-					if err := notifier.SendEmail(cfg.SMTP, title, msg); err != nil {
+					alert := notifier.PriceAlert{
+						ProductName: product.Name,
+						Store:       bestOffer.Store,
+						URL:         bestOffer.URL,
+						OldPrice:    previousBest,
+						HasOldPrice: havePreviousBest,
+						NewPrice:    bestPrice,
+						TargetPrice: product.TargetPrice,
+						TargetHit:   targetHit,
+					}
+					if err := notifier.SendPriceAlertEmail(cfg.SMTP, title, alert); err != nil {
 						log.Printf("Error sending email for %s: %v", product.Name, err)
 					}
 				}
