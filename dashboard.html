@@ -47,11 +47,14 @@
           <p class="text-gray-400 text-sm">Dashboard de Monitorização</p>
         </div>
       </div>
-      <div class="mt-4 md:mt-0 flex gap-4">
+      <div class="mt-4 md:mt-0 flex items-center gap-4">
         <div class="bg-card px-4 py-2 rounded-lg border border-gray-800 text-center">
           <span class="block text-xs text-gray-400 uppercase tracking-wider">Itens Rastreados</span>
           <span id="total-items" class="text-xl font-bold text-ninja">0</span>
         </div>
+        <a href="/discover.html" class="flex items-center gap-2 bg-ninja text-black font-semibold px-4 py-2.5 rounded-lg hover:bg-[#00e65c] transition-colors">
+          <i data-lucide="search" class="w-4 h-4"></i> Descobrir
+        </a>
       </div>
     </header>
 
@@ -94,6 +97,11 @@
                         <input type="checkbox" id="edit-sticky" class="w-4 h-4 accent-ninja bg-darker border-gray-700 rounded">
                         <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Notificação Fixa (Sticky no ecrã)</span>
                     </label>
+
+                    <label class="flex items-center gap-3 cursor-pointer group">
+                        <input type="checkbox" id="edit-email" class="w-4 h-4 accent-ninja bg-darker border-gray-700 rounded">
+                        <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Notificar por email (requer SMTP configurado)</span>
+                    </label>
                 </div>
 
                 <div class="flex justify-end gap-3 pt-4 border-t border-gray-800">
@@ -133,6 +141,7 @@
           document.getElementById('edit-active').checked = item.active !== undefined ? item.active : true;
           document.getElementById('edit-drop').checked = item.alert_any_price_drop || false;
           document.getElementById('edit-sticky').checked = item.sticky || false;
+          document.getElementById('edit-email').checked = item.notify_email || false;
 
           // Exibe o modal
           document.getElementById('edit-modal').classList.remove('hidden');
@@ -151,7 +160,8 @@
             target_price: parseFloat(document.getElementById('edit-target').value),
             active: document.getElementById('edit-active').checked,
             alert_any_price_drop: document.getElementById('edit-drop').checked,
-            sticky: document.getElementById('edit-sticky').checked
+            sticky: document.getElementById('edit-sticky').checked,
+            notify_email: document.getElementById('edit-email').checked
         };
 
         try {
@@ -184,7 +194,8 @@
             name: item.name,
             active: newState,
             alert_any_price_drop: item.alert_any_price_drop || false,
-            sticky: item.sticky || false
+            sticky: item.sticky || false,
+            notify_email: item.notify_email || false
         };
 
         try {
@@ -245,13 +256,25 @@
           window.itemsStore = {};
 
           configItems.forEach((item) => {
-            window.itemsStore[item.id] = item; 
-            
-            const hist = historyItems[item.id] || {};
-            const price = hist.last_price || hist.price || 0;
-            const dateStr = hist.last_checked || hist.date || "---";
+            window.itemsStore[item.id] = item;
+
+            const offers = item.offers || [];
+            const offerHist = offers.map((o) => ({ offer: o, hist: historyItems[o.id] || {} }));
+
+            // The "best" offer is whichever currently has the lowest known price.
+            let best = null;
+            offerHist.forEach((entry) => {
+              const p = entry.hist.last_price || 0;
+              if (p > 0 && (!best || p < (best.hist.last_price || Infinity))) {
+                best = entry;
+              }
+            });
+
+            const hist = best ? best.hist : {};
+            const price = hist.last_price || 0;
+            const dateStr = hist.last_checked || "---";
             const target = item.target_price || 0;
-            
+
             const isActive = item.active !== undefined ? item.active : true;
 
             const card = document.createElement("div");
@@ -301,14 +324,29 @@
                 <div class="w-full h-16 mb-4 mt-2">
                     <canvas id="chart-${item.id}"></canvas>
                 </div>
-                
+
+                <div class="space-y-1.5 mb-2">
+                    ${offerHist.map(({ offer, hist: oh }) => {
+                        const offerPrice = oh.last_price || 0;
+                        const isBest = best && offer.id === best.offer.id;
+                        return `
+                        <a href="${offer.url}" target="_blank" class="flex justify-between items-center text-sm rounded-lg px-2 py-1 transition-colors ${isBest ? 'bg-ninja/10 text-ninja' : 'text-gray-400 hover:text-white'}">
+                            <span class="flex items-center gap-1 truncate">
+                                <i data-lucide="external-link" class="w-3 h-3 shrink-0"></i>
+                                <span class="truncate">${offer.store}</span>
+                            </span>
+                            <span class="font-semibold shrink-0">${offerPrice > 0 ? formatMoney(offerPrice) : '---'}</span>
+                        </a>`;
+                    }).join('')}
+                </div>
+
                 <div class="pt-4 border-t border-gray-800 flex justify-between items-center">
                     <div class="text-xs text-gray-500 flex items-center gap-1" title="Última checagem: ${readableDate}">
                         <i data-lucide="clock" class="w-3 h-3"></i>
                         ${readableDate.split(' às ')[0]}
                     </div>
-                    <a href="${item.url}" target="_blank" class="text-ninja hover:text-white transition-colors flex items-center gap-1 text-sm font-medium">
-                        Loja <i data-lucide="external-link" class="w-4 h-4"></i>
+                    <a href="/discover.html?product_id=${item.id}" class="text-ninja hover:text-white transition-colors flex items-center gap-1 text-sm font-medium">
+                        Encontrar noutras lojas <i data-lucide="search" class="w-4 h-4"></i>
                     </a>
                 </div>
             `;

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/getlantern/systray"
@@ -18,6 +19,7 @@ const (
 	historyPath   	= "prices_history.json"
 	checkInterval 	= 1 * time.Hour // Default background check interval
 	apiPort	   		= 65452
+	systrayIconPath = "assets/ninja-price-logo-systray.png"
 )
 
 func main() {
@@ -34,6 +36,12 @@ func main() {
 }
 
 func onReady() {
+	if iconBytes, err := os.ReadFile(systrayIconPath); err != nil {
+		log.Printf("Could not load systray icon from %s: %v", systrayIconPath, err)
+	} else {
+		systray.SetIcon(iconBytes)
+	}
+
 	systray.SetTitle("NP")
 	systray.SetTooltip("NinjaPrice Tracker")
 
@@ -76,7 +84,7 @@ func checkPrices() {
 	}
 
 	if len(cfg.Items) == 0 {
-		log.Println("No items configured to track.")
+		log.Println("No products configured to track.")
 		return
 	}
 
@@ -86,70 +94,76 @@ func checkPrices() {
 		return
 	}
 
-	for _, item := range cfg.Items {
-		if !item.Active {
-			log.Printf("Skipping %s as alert_price is disabled.", item.Name)
-			continue // Skip items that don't have alert_price enabled
-		}
-		log.Printf("Checking %s...", item.Name)
-		currentPrice, source, err := scraper.ScrapePrice(item.URL, item.Selector)
-		if err != nil {
-			log.Printf("Failed to scrape %s: %v", item.Name, err)
+	for _, product := range cfg.Items {
+		if !product.Active {
+			log.Printf("Skipping %s as tracking is disabled.", product.Name)
 			continue
 		}
-		log.Printf("Got price for %s via %s: %.2f", item.Name, source, currentPrice)
-
-		histItem, exists := hist.Items[item.ID]
-		if !exists {
-			histItem = &storage.HistoryItem{
-				LowestPrice: currentPrice,
-			}
-			hist.Items[item.ID] = histItem
+		if len(product.Offers) == 0 {
+			log.Printf("Skipping %s: no offers configured.", product.Name)
+			continue
 		}
 
-		canNotify := time.Since(item.LastNotified) > time.Duration(cfg.CooldownPeriod) * time.Minute
+		var bestPrice, previousBest float64
+		haveBest := false
+		havePreviousBest := false
 
-		// Check conditions for notifications
-		if canNotify {
-			notified := false
-			if item.TargetPrice > 0 && currentPrice <= item.TargetPrice {
-				msg := fmt.Sprintf("Target price reached! Currently %.2f", currentPrice)
-				// Target price reaching is important, we pass true to make it a sticky notification
-				notifier.Notify("Price Alert: "+item.Name, msg, item.Sticky)
-				notified = true
-			} else if item.AlertAnyPriceDrop  && (exists && histItem.LastPrice > 0 && currentPrice < histItem.LastPrice) {
-				diff := histItem.LastPrice - currentPrice
-				msg := fmt.Sprintf("Price dropped by %.2f! Now %.2f", diff, currentPrice)
-				// Regular price drop can also be sticky, or you can change this to false for transient notifications
-				notifier.Notify("Price Drop: "+item.Name, msg, false)
-				notified = true
+		for _, offer := range product.Offers {
+			log.Printf("Checking %s (%s)...", product.Name, offer.Store)
+			price, source, err := scraper.ScrapePrice(offer.URL, offer.Selector)
+			if err != nil {
+				log.Printf("Failed to scrape %s (%s): %v", product.Name, offer.Store, err)
+				continue
 			}
-			if notified {
-				log.Printf("Notification sent for %s. Current price: %.2f", item.Name, currentPrice)
-				if err := config.UpdateLastNotified(configPath, item.ID); err != nil {
-					log.Printf("Error updating last_notified for %s: %v", item.Name, err)
+			log.Printf("Got price for %s (%s) via %s: %.2f", product.Name, offer.Store, source, price)
+
+			if existing, exists := hist.Items[offer.ID]; exists && existing.LastPrice > 0 && (!havePreviousBest || existing.LastPrice < previousBest) {
+				previousBest = existing.LastPrice
+				havePreviousBest = true
+			}
+
+			hist.RecordPrice(offer.ID, price)
+
+			if !haveBest || price < bestPrice {
+				bestPrice = price
+				haveBest = true
+			}
+		}
+
+		if !haveBest {
+			continue // every offer failed to scrape this round
+		}
+
+		canNotify := time.Since(product.LastNotified) > time.Duration(cfg.CooldownPeriod)*time.Minute
+
+		// Check conditions for notifications, comparing against the best (lowest) price across all offers
+		if canNotify {
+			title, msg := "", ""
+			sticky := false
+			if product.TargetPrice > 0 && bestPrice <= product.TargetPrice {
+				title = "Price Alert: " + product.Name
+				msg = fmt.Sprintf("Target price reached! Best price now %.2f", bestPrice)
+				// Target price reaching is important, we pass true to make it a sticky notification
+				sticky = product.Sticky
+			} else if product.AlertAnyPriceDrop && havePreviousBest && bestPrice < previousBest {
+				diff := previousBest - bestPrice
+				title = "Price Drop: " + product.Name
+				msg = fmt.Sprintf("Price dropped by %.2f! Now %.2f", diff, bestPrice)
+				// Regular price drop can also be sticky, or you can change this to false for transient notifications
+			}
+			if title != "" {
+				notifier.Notify(title, msg, sticky)
+				if product.NotifyEmail {
+					if err := notifier.SendEmail(cfg.SMTP, title, msg); err != nil {
+						log.Printf("Error sending email for %s: %v", product.Name, err)
+					}
+				}
+				log.Printf("Notification sent for %s. Best price: %.2f", product.Name, bestPrice)
+				if err := config.UpdateLastNotified(configPath, product.ID); err != nil {
+					log.Printf("Error updating last_notified for %s: %v", product.Name, err)
 				}
 			}
 		}
-
-		// Update history
-		histItem.LastPrice = currentPrice
-		if currentPrice < histItem.LowestPrice {
-			histItem.LowestPrice = currentPrice
-		}
-		histItem.LastChecked = time.Now()
-
-		pricePoint := storage.PricePoint{
-			Price: currentPrice,
-			Date:  time.Now(), 
-		}
-		histItem.History = append(histItem.History, pricePoint)
-
-		if len(histItem.History) > 14 {
-			histItem.History = histItem.History[1:]
-		}
-
-		hist.Items[item.ID] = histItem
 	}
 
 	if err := storage.SaveHistory(historyPath, hist); err != nil {

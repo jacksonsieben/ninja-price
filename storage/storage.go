@@ -45,6 +45,30 @@ func LoadHistory(path string) (*History, error) {
 	return &hist, nil
 }
 
+// RecordPrice upserts a fresh price reading for the given offer ID: updates
+// LastPrice/LowestPrice/LastChecked and appends to the (capped) history
+// series. Shared by the periodic checker and the "record a price the moment
+// an offer is created" path, so both stay in sync.
+func (h *History) RecordPrice(offerID string, price float64) *HistoryItem {
+	item, exists := h.Items[offerID]
+	if !exists {
+		item = &HistoryItem{LowestPrice: price}
+		h.Items[offerID] = item
+	}
+
+	item.LastPrice = price
+	if item.LowestPrice == 0 || price < item.LowestPrice {
+		item.LowestPrice = price
+	}
+	item.LastChecked = time.Now()
+	item.History = append(item.History, PricePoint{Price: price, Date: time.Now()})
+	if len(item.History) > 14 {
+		item.History = item.History[1:]
+	}
+
+	return item
+}
+
 func SaveHistory(path string, hist *History) error {
 	file, err := os.Create(path)
 	if err != nil {

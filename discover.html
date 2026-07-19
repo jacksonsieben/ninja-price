@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🥷 NinjaPrice - Encontrar noutras lojas</title>
+
+    <link rel="icon" type="image/png" href="assets/icon.png" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              ninja: "#00C853",
+              dark: "#121212",
+              darker: "#0a0a0a",
+              card: "#1e1e1e",
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        background-color: #0a0a0a;
+        color: #e5e5e5;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen p-6 md:p-12">
+    <main class="max-w-2xl mx-auto">
+      <header class="flex items-center gap-3 mb-8 border-b border-gray-800 pb-6">
+        <div class="bg-ninja text-black p-3 rounded-xl">
+          <i data-lucide="search" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h1 class="text-2xl font-bold text-white tracking-tight">Encontrar noutras lojas</h1>
+          <p class="text-gray-400 text-sm">Deteção assistida por IA — cada sugestão é verificada antes de ser mostrada.</p>
+        </div>
+      </header>
+
+      <div id="search-box" class="mb-6">
+        <label class="block text-sm text-gray-400 mb-1">Nome do produto</label>
+        <div class="flex gap-2">
+          <input id="product-name" type="text" class="flex-1 bg-card border border-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:border-ninja transition-colors" placeholder="Ex: Consola PS5 Standard" />
+          <button id="search-btn" class="px-4 py-2 bg-ninja text-black font-semibold rounded-lg hover:bg-[#00e65c] transition-colors">Procurar</button>
+        </div>
+      </div>
+
+      <div id="status" class="text-gray-400 text-sm mb-4"></div>
+
+      <div id="results" class="space-y-3 mb-6"></div>
+
+      <button id="add-selected-btn" hidden class="w-full py-3 bg-ninja text-black font-semibold rounded-lg hover:bg-[#00e65c] transition-colors">
+        Adicionar selecionados
+      </button>
+    </main>
+
+    <script>
+      const API_BASE = "";
+      const params = new URLSearchParams(window.location.search);
+      const productID = params.get("product_id");
+
+      const els = {
+        searchBox: document.getElementById("search-box"),
+        productName: document.getElementById("product-name"),
+        searchBtn: document.getElementById("search-btn"),
+        status: document.getElementById("status"),
+        results: document.getElementById("results"),
+        addSelectedBtn: document.getElementById("add-selected-btn"),
+      };
+
+      let candidates = [];
+      let resolvedProductName = "";
+
+      function formatMoney(value) {
+        if (!value) return "---";
+        return new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(value);
+      }
+
+      function renderCandidates() {
+        els.results.innerHTML = "";
+        if (candidates.length === 0) {
+          els.results.innerHTML = '<p class="text-gray-500 text-sm">Nenhuma sugestão encontrada.</p>';
+          els.addSelectedBtn.hidden = true;
+          return;
+        }
+
+        candidates.forEach((c, i) => {
+          const confidencePct = Math.round((c.confidence || 0) * 100);
+          const badgeColor = c.matched ? "bg-ninja/20 text-ninja" : "bg-red-500/20 text-red-400";
+
+          const row = document.createElement("label");
+          row.className = "flex items-center gap-3 bg-card border border-gray-800 rounded-xl p-4 cursor-pointer hover:border-gray-700 transition-colors";
+          row.innerHTML = `
+            <input type="checkbox" data-idx="${i}" ${c.matched ? "checked" : ""} class="w-4 h-4 accent-ninja shrink-0" />
+            <div class="flex-1 min-w-0">
+              <div class="flex justify-between items-center gap-2">
+                <span class="font-medium text-white truncate">${c.store}</span>
+                <span class="font-bold text-white shrink-0">${formatMoney(c.price)}</span>
+              </div>
+              <a href="${c.url}" target="_blank" class="text-xs text-gray-500 hover:text-gray-300 truncate block">${c.url}</a>
+            </div>
+            <span class="text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${badgeColor}">${confidencePct}%</span>
+          `;
+          els.results.appendChild(row);
+        });
+
+        els.addSelectedBtn.hidden = false;
+        lucide.createIcons();
+      }
+
+      async function runDiscovery(name) {
+        els.status.textContent = `A procurar "${name}" noutras lojas...`;
+        els.results.innerHTML = "";
+        els.addSelectedBtn.hidden = true;
+
+        const body = productID ? { product_id: productID } : { product_name: name };
+
+        try {
+          const res = await fetch(`${API_BASE}/discover`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (res.status === 404) {
+            els.status.textContent = "A deteção assistida está desativada (configura 'llm.provider' em config.json).";
+            return;
+          }
+          if (!res.ok) throw new Error(await res.text());
+
+          const data = await res.json();
+          resolvedProductName = data.product_name || name;
+          candidates = data.candidates || [];
+          els.status.textContent = candidates.length
+            ? `Encontrado(s) ${candidates.length} resultado(s) para "${resolvedProductName}".`
+            : `Sem resultados para "${resolvedProductName}".`;
+          renderCandidates();
+        } catch (err) {
+          els.status.textContent = `❌ Erro: ${err.message}`;
+        }
+      }
+
+      els.searchBtn.addEventListener("click", () => {
+        const name = els.productName.value.trim();
+        if (!name) return;
+        runDiscovery(name);
+      });
+
+      function slugify(name) {
+        return name.toLowerCase().replace(/[^a-z0-9]+/g, "-") + "-" + Date.now().toString().slice(-4);
+      }
+
+      async function addOfferTo(id, candidate) {
+        await fetch(`${API_BASE}/products/${encodeURIComponent(id)}/offers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ store: candidate.store, url: candidate.url, selector: "" }),
+        });
+      }
+
+      els.addSelectedBtn.addEventListener("click", async () => {
+        const checked = Array.from(els.results.querySelectorAll('input[type="checkbox"]:checked')).map(
+          (cb) => candidates[Number(cb.dataset.idx)]
+        );
+        if (checked.length === 0) return;
+
+        els.addSelectedBtn.disabled = true;
+        els.addSelectedBtn.textContent = "A guardar...";
+
+        try {
+          let targetProductID = productID;
+
+          if (!targetProductID) {
+            // Standalone flow: no existing product yet, bootstrap one from the first pick.
+            const first = checked[0];
+            targetProductID = slugify(resolvedProductName || els.productName.value.trim());
+            await fetch(`${API_BASE}/items`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                id: targetProductID,
+                name: resolvedProductName || els.productName.value.trim(),
+                url: first.url,
+                selector: "",
+                category: "Misc",
+                target_price: 0,
+                active: true,
+                alert_any_price_drop: false,
+                sticky: false,
+              }),
+            });
+            for (const c of checked.slice(1)) {
+              await addOfferTo(targetProductID, c);
+            }
+          } else {
+            for (const c of checked) {
+              await addOfferTo(targetProductID, c);
+            }
+          }
+
+          els.status.textContent = `✅ ${checked.length} oferta(s) adicionada(s)!`;
+          els.addSelectedBtn.textContent = "Adicionado";
+        } catch (err) {
+          els.status.textContent = `❌ Erro ao guardar: ${err.message}`;
+          els.addSelectedBtn.disabled = false;
+          els.addSelectedBtn.textContent = "Adicionar selecionados";
+        }
+      });
+
+      async function init() {
+        if (productID) {
+          els.searchBox.hidden = true;
+          try {
+            const res = await fetch(`${API_BASE}/config`);
+            const config = await res.json();
+            const product = (config.items || []).find((p) => p.id === productID);
+            resolvedProductName = product ? product.name : "";
+          } catch (err) {
+            // ignore — /discover will still resolve the name from the product
+          }
+          runDiscovery(resolvedProductName);
+        }
+        lucide.createIcons();
+      }
+
+      init();
+    </script>
+  </body>
+</html>
