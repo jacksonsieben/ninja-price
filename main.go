@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/getlantern/systray"
@@ -52,6 +54,13 @@ func onReady() {
 	// Start periodic checker
 	ticket := time.NewTicker(checkInterval)
 
+	// SIGUSR1 is sent by the resume-watcher (see README) right after the
+	// system wakes from suspend, since the ticker above stalls during sleep
+	// (its monotonic clock doesn't advance while suspended) and would
+	// otherwise leave a long gap before the next check.
+	resumeCh := make(chan os.Signal, 1)
+	signal.Notify(resumeCh, syscall.SIGUSR1)
+
 	go func() {
 		// Run an initial check
 		checkPrices()
@@ -63,6 +72,9 @@ func onReady() {
 				checkPrices()
 			case <-ticket.C:
 				log.Println("Periodic check triggered.")
+				checkPrices()
+			case <-resumeCh:
+				log.Println("Resume-from-suspend signal received, running check.")
 				checkPrices()
 			case <-mQuit.ClickedCh:
 				systray.Quit()
