@@ -4,9 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>🥷 NinjaPrice Dashboard</title>
-    
     <link rel="icon" type="image/png" href="assets/icon.png" />
-    
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -15,42 +14,39 @@
       tailwind.config = {
         theme: {
           extend: {
-            colors: {
-              ninja: "#00C853",
-              dark: "#121212",
-              darker: "#0a0a0a",
-              card: "#1e1e1e",
-            },
+            colors: { ninja: "#00C853", dark: "#121212", darker: "#0a0a0a", card: "#1e1e1e" },
           },
         },
       };
     </script>
     <style>
-      body {
-        background-color: #0a0a0a;
-        color: #e5e5e5;
-      }
-      .ninja-glow {
-        box-shadow: 0 0 15px rgba(0, 200, 83, 0.1);
-      }
+      body { background-color: #0a0a0a; color: #e5e5e5; }
+      .ninja-glow { box-shadow: 0 0 15px rgba(0, 200, 83, 0.1); }
       canvas { outline: none; }
+      select, input { color-scheme: dark; }
     </style>
   </head>
-  <body class="min-h-screen p-6 md:p-12 relative">
-    <header class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center mb-10 border-b border-gray-800 pb-6">
+  <body class="min-h-screen p-4 md:p-10">
+    <header class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center mb-8 border-b border-gray-800 pb-6 gap-4">
       <div class="flex items-center gap-3">
-        <div class="bg-ninja text-black p-3 rounded-xl">
-          <i data-lucide="swords" class="w-8 h-8"></i>
-        </div>
+        <div class="bg-ninja text-black p-3 rounded-xl"><i data-lucide="swords" class="w-7 h-7"></i></div>
         <div>
-          <h1 class="text-3xl font-bold text-white tracking-tight">NinjaPrice</h1>
+          <h1 class="text-2xl md:text-3xl font-bold text-white tracking-tight">NinjaPrice</h1>
           <p class="text-gray-400 text-sm">Dashboard de Monitorização</p>
         </div>
       </div>
-      <div class="mt-4 md:mt-0 flex items-center gap-4">
+      <div class="flex items-center gap-3">
         <div class="bg-card px-4 py-2 rounded-lg border border-gray-800 text-center">
-          <span class="block text-xs text-gray-400 uppercase tracking-wider">Itens Rastreados</span>
-          <span id="total-items" class="text-xl font-bold text-ninja">0</span>
+          <span class="block text-[10px] text-gray-400 uppercase tracking-wider">Itens</span>
+          <span id="stat-total" class="text-lg font-bold text-white">0</span>
+        </div>
+        <div class="bg-card px-4 py-2 rounded-lg border border-gray-800 text-center">
+          <span class="block text-[10px] text-gray-400 uppercase tracking-wider">Ativos</span>
+          <span id="stat-active" class="text-lg font-bold text-ninja">0</span>
+        </div>
+        <div class="bg-card px-4 py-2 rounded-lg border border-gray-800 text-center">
+          <span class="block text-[10px] text-gray-400 uppercase tracking-wider">Abaixo do Alvo</span>
+          <span id="stat-below" class="text-lg font-bold text-yellow-400">0</span>
         </div>
         <a href="/discover.html" class="flex items-center gap-2 bg-ninja text-black font-semibold px-4 py-2.5 rounded-lg hover:bg-[#00e65c] transition-colors">
           <i data-lucide="search" class="w-4 h-4"></i> Descobrir
@@ -59,375 +55,264 @@
     </header>
 
     <main class="max-w-6xl mx-auto">
-      <div id="products-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <!-- Controls -->
+      <div class="flex flex-col md:flex-row gap-3 mb-6">
+        <div class="relative flex-1">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
+          <input id="search" type="text" placeholder="Procurar produto…" oninput="applyView()"
+            class="w-full bg-card border border-gray-800 rounded-lg pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:border-ninja" />
         </div>
+        <select id="category" onchange="applyView()" class="bg-card border border-gray-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-ninja">
+          <option value="">Todas as categorias</option>
+        </select>
+        <select id="sort" onchange="applyView()" class="bg-card border border-gray-800 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-ninja">
+          <option value="target">Perto do alvo</option>
+          <option value="discount">Maior desconto (vs pico)</option>
+          <option value="recent">Mais recente</option>
+          <option value="name">Nome (A–Z)</option>
+        </select>
+        <label class="flex items-center gap-2 bg-card border border-gray-800 rounded-lg px-3 py-2.5 text-sm cursor-pointer">
+          <input id="active-only" type="checkbox" class="w-4 h-4 accent-ninja" onchange="applyView()" />
+          <span class="text-gray-300">Só ativos</span>
+        </label>
+      </div>
+
+      <div id="list" class="space-y-3"></div>
+      <p id="empty" class="hidden text-gray-500 text-center py-16">Nenhum produto corresponde aos filtros.</p>
     </main>
 
-    <div id="edit-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex items-center justify-center backdrop-blur-sm">
-        <div class="bg-card border border-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
-            <h2 class="text-xl font-bold text-white mb-5 flex items-center gap-2">
-                <i data-lucide="settings" class="w-5 h-5 text-ninja"></i> Editar Configurações
-            </h2>
-            
-            <form id="edit-form" onsubmit="submitEditForm(event)">
-                <input type="hidden" id="edit-id">
-
-                <div class="mb-4">
-                    <label class="block text-sm text-gray-400 mb-1">Nome do Produto</label>
-                    <input type="text" id="edit-name" class="w-full bg-darker border border-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:border-ninja transition-colors" required>
-                </div>
-
-                <div class="mb-5">
-                    <label class="block text-sm text-gray-400 mb-1">Preço Alvo (€)</label>
-                    <input type="number" id="edit-target" step="0.01" class="w-full bg-darker border border-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:border-ninja transition-colors" required>
-                </div>
-
-                <div class="space-y-3 mb-6 bg-darker p-4 rounded-lg border border-gray-800">
-                    <label class="flex items-center gap-3 cursor-pointer group">
-                        <input type="checkbox" id="edit-active" class="w-4 h-4 accent-ninja bg-darker border-gray-700 rounded">
-                        <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Rastreamento Ativo</span>
-                    </label>
-
-                    <label class="flex items-center gap-3 cursor-pointer group">
-                        <input type="checkbox" id="edit-drop" class="w-4 h-4 accent-ninja bg-darker border-gray-700 rounded">
-                        <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Alertar qualquer queda de preço</span>
-                    </label>
-
-                    <label class="flex items-center gap-3 cursor-pointer group">
-                        <input type="checkbox" id="edit-sticky" class="w-4 h-4 accent-ninja bg-darker border-gray-700 rounded">
-                        <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Notificação Fixa (Sticky no ecrã)</span>
-                    </label>
-
-                    <label class="flex items-center gap-3 cursor-pointer group">
-                        <input type="checkbox" id="edit-email" class="w-4 h-4 accent-ninja bg-darker border-gray-700 rounded">
-                        <span class="text-sm text-gray-300 group-hover:text-white transition-colors">Notificar por email (requer SMTP configurado)</span>
-                    </label>
-                </div>
-
-                <div class="flex justify-end gap-3 pt-4 border-t border-gray-800">
-                    <button type="button" onclick="closeModal()" class="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors">Cancelar</button>
-                    <button type="submit" class="px-4 py-2 text-sm bg-ninja text-black font-semibold rounded-lg hover:bg-[#00e65c] transition-colors">Salvar Alterações</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <script>
-      // ---------------------------------------------------------
-      // ESTADO GLOBAL E UTILITÁRIOS
-      // ---------------------------------------------------------
-      window.itemsStore = {};
+      const fetchOpts = { cache: "no-store" };
+      const formatMoney = (v) =>
+        v === undefined || v === null || v === 0
+          ? "—"
+          : new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
 
-      const formatMoney = (value) => {
-        if (value === undefined || value === null) return "---";
-        return new Intl.NumberFormat("pt-PT", {
-          style: "currency",
-          currency: "EUR",
-        }).format(value);
-      };
-
-      // ---------------------------------------------------------
-      // MODAL E AÇÕES DA API (PUT e DELETE)
-      // ---------------------------------------------------------
-      
-      function openModal(id) {
-          const item = window.itemsStore[id];
-          if (!item) return;
-
-          // Preenche os campos do formulário
-          document.getElementById('edit-id').value = item.id;
-          document.getElementById('edit-name').value = item.name;
-          document.getElementById('edit-target').value = item.target_price || 0;
-          document.getElementById('edit-active').checked = item.active !== undefined ? item.active : true;
-          document.getElementById('edit-drop').checked = item.alert_any_price_drop || false;
-          document.getElementById('edit-sticky').checked = item.sticky || false;
-          document.getElementById('edit-email').checked = item.notify_email || false;
-
-          // Exibe o modal
-          document.getElementById('edit-modal').classList.remove('hidden');
+      function relTime(dateStr) {
+        if (!dateStr) return "—";
+        const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+        if (diff < 90) return "agora";
+        if (diff < 3600) return Math.round(diff / 60) + "m atrás";
+        if (diff < 86400) return Math.round(diff / 3600) + "h atrás";
+        return Math.round(diff / 86400) + "d atrás";
       }
 
-      function closeModal() {
-          document.getElementById('edit-modal').classList.add('hidden');
-      }
-
-      async function submitEditForm(event) {
-        event.preventDefault(); // Impede o formulário de recarregar a página
-        
-        const id = document.getElementById('edit-id').value;
-        const payload = {
-            name: document.getElementById('edit-name').value,
-            target_price: parseFloat(document.getElementById('edit-target').value),
-            active: document.getElementById('edit-active').checked,
-            alert_any_price_drop: document.getElementById('edit-drop').checked,
-            sticky: document.getElementById('edit-sticky').checked,
-            notify_email: document.getElementById('edit-email').checked
-        };
-
-        try {
-            const res = await fetch(`/items?id=${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            if(res.ok) {
-                closeModal();
-                loadDashboard(); 
-            } else {
-                const text = await res.text();
-                alert("Erro ao atualizar o item: " + text);
-            }
-        } catch(e) {
-            alert("Erro de conexão ao servidor NinjaPrice.");
-        }
-      }
-
-      async function toggleActive(id) {
-        const item = window.itemsStore[id];
-        if (!item) return;
-
-        const newState = !(item.active !== undefined ? item.active : true);
-
-        const payload = {
-            target_price: item.target_price,
-            name: item.name,
-            active: newState,
-            alert_any_price_drop: item.alert_any_price_drop || false,
-            sticky: item.sticky || false,
-            notify_email: item.notify_email || false
-        };
-
-        try {
-            const res = await fetch(`/items?id=${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            
-            if(res.ok) loadDashboard();
-            else alert("Erro ao atualizar estado.");
-        } catch(e) {
-            alert("Erro de conexão ao servidor.");
-        }
-      }
-
-      async function deleteItem(id, name) {
-        if (!confirm(`Tem a certeza que deseja remover "${name}" do rastreamento?`)) return;
-
-        try {
-            const res = await fetch(`/items?id=${id}`, { method: 'DELETE' });
-            
-            if(res.ok) {
-                loadDashboard(); 
-            } else {
-                const text = await res.text();
-                alert("Erro ao remover o item: " + text);
-            }
-        } catch(e) {
-            alert("Erro de conexão ao servidor NinjaPrice.");
-        }
-      }
-
-      // ---------------------------------------------------------
-      // RENDERIZAÇÃO E GRÁFICOS
-      // ---------------------------------------------------------
+      // rows: precomputed view model, one per product
+      let rows = [];
+      let charts = [];
 
       async function loadDashboard() {
         try {
-          const timestamp = new Date().getTime();
-          const fetchOptions = { cache: "no-store" };
-
           const [histRes, confRes] = await Promise.all([
-            fetch(`/history?t=${timestamp}`, fetchOptions),
-            fetch(`/config?t=${timestamp}`, fetchOptions),
+            fetch("/history", fetchOpts),
+            fetch("/config", fetchOpts),
           ]);
-
           const history = await histRes.json();
           const config = await confRes.json();
+          const histItems = history.items || {};
+          const items = config.items || [];
 
-          const historyItems = history.items || history;
-          const configItems = config.items || config;
-
-          const grid = document.getElementById("products-grid");
-          grid.innerHTML = "";
-          document.getElementById("total-items").innerText = configItems.length;
-          
-          window.itemsStore = {};
-
-          configItems.forEach((item) => {
-            window.itemsStore[item.id] = item;
-
-            const offers = item.offers || [];
-            const offerHist = offers.map((o) => ({ offer: o, hist: historyItems[o.id] || {} }));
-
-            // The "best" offer is whichever currently has the lowest known price.
-            let best = null;
-            offerHist.forEach((entry) => {
-              const p = entry.hist.last_price || 0;
-              if (p > 0 && (!best || p < (best.hist.last_price || Infinity))) {
-                best = entry;
-              }
-            });
-
-            const hist = best ? best.hist : {};
-            const price = hist.last_price || 0;
-            const dateStr = hist.last_checked || "---";
-            const target = item.target_price || 0;
-
+          rows = items.map((item) => {
             const isActive = item.active !== undefined ? item.active : true;
+            const offers = (item.offers || []).map((o) => ({ offer: o, h: histItems[o.id] || {} }));
 
-            const card = document.createElement("div");
-            card.className = `bg-card border border-gray-800 rounded-2xl p-6 transition-all duration-300 flex flex-col justify-between relative ${isActive ? 'hover:border-ninja ninja-glow' : 'opacity-60 hover:opacity-100 grayscale-[30%]'}`;
-
-            let readableDate = "---";
-            if (dateStr !== "---") {
-                const dDate = new Date(dateStr);
-                readableDate = dDate.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }) + ' às ' + dDate.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
-            }
-
-            card.innerHTML = `
-                <div>
-                    <div class="flex justify-between items-start mb-4">
-                        <div class="flex gap-2">
-                            <span class="text-xs font-semibold px-3 py-1 bg-gray-800 text-gray-300 rounded-full">
-                                ${item.category || "Monitoramento"}
-                            </span>
-                            <button onclick="toggleActive('${item.id}')" class="text-xs font-semibold px-3 py-1 rounded-full transition-colors ${isActive ? 'bg-ninja/20 text-ninja hover:bg-ninja/30' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}" title="Clique para ativar/desativar alertas">
-                                ${isActive ? 'Ativo' : 'Pausado'}
-                            </button>
-                        </div>
-                        <div class="flex gap-3 text-gray-500">
-                            <button onclick="openModal('${item.id}')" class="hover:text-white transition-colors" title="Editar Configurações">
-                                <i data-lucide="edit-2" class="w-4 h-4"></i>
-                            </button>
-                            <button onclick="deleteItem('${item.id}', '${item.name.replace(/'/g, "\\'")}')" class="hover:text-red-500 transition-colors" title="Remover Produto">
-                                <i data-lucide="trash-2" class="w-4 h-4"></i>
-                            </button>
-                        </div>
-                    </div>
-
-                    <h3 class="text-lg font-medium text-white mb-4 line-clamp-2" title="${item.name}">${item.name}</h3>
-                    
-                    <div class="flex justify-between items-end mb-4">
-                        <div>
-                            <span class="text-sm text-gray-400 block mb-1">Preço Atual</span>
-                            <span class="text-4xl font-bold text-white">${formatMoney(price)}</span>
-                        </div>
-                        <div class="text-right">
-                            <span class="text-xs text-gray-500 block mb-1">Preço Alvo</span>
-                            <span class="text-sm font-semibold ${isActive ? 'text-ninja' : 'text-gray-500'}">${formatMoney(target)}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="w-full h-16 mb-4 mt-2">
-                    <canvas id="chart-${item.id}"></canvas>
-                </div>
-
-                <div class="space-y-1.5 mb-2">
-                    ${offerHist.map(({ offer, hist: oh }) => {
-                        const offerPrice = oh.last_price || 0;
-                        const isBest = best && offer.id === best.offer.id;
-                        return `
-                        <a href="${offer.url}" target="_blank" class="flex justify-between items-center text-sm rounded-lg px-2 py-1 transition-colors ${isBest ? 'bg-ninja/10 text-ninja' : 'text-gray-400 hover:text-white'}">
-                            <span class="flex items-center gap-1 truncate">
-                                <i data-lucide="external-link" class="w-3 h-3 shrink-0"></i>
-                                <span class="truncate">${offer.store}</span>
-                            </span>
-                            <span class="font-semibold shrink-0">${offerPrice > 0 ? formatMoney(offerPrice) : '---'}</span>
-                        </a>`;
-                    }).join('')}
-                </div>
-
-                <div class="pt-4 border-t border-gray-800 flex justify-between items-center">
-                    <div class="text-xs text-gray-500 flex items-center gap-1" title="Última checagem: ${readableDate}">
-                        <i data-lucide="clock" class="w-3 h-3"></i>
-                        ${readableDate.split(' às ')[0]}
-                    </div>
-                    <a href="/discover.html?product_id=${item.id}" class="text-ninja hover:text-white transition-colors flex items-center gap-1 text-sm font-medium">
-                        Encontrar noutras lojas <i data-lucide="search" class="w-4 h-4"></i>
-                    </a>
-                </div>
-            `;
-            grid.appendChild(card);
-
-            let chartData = hist.history || []; 
-            let labels = [];
-            let prices = [];
-
-            if (chartData.length > 0) {
-                labels = chartData.map(d => {
-                    const dt = new Date(d.date);
-                    return dt.toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' }) + ' ' + 
-                           dt.toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' });
-                });
-                prices = chartData.map(d => d.price);
-                
-                if (chartData.length === 1) {
-                    labels.unshift("Início");
-                    prices.unshift(chartData[0].price);
-                }
-            } else if (price > 0) {
-                labels = ["Hoje", "Hoje"];
-                prices = [price, price];
-            }
-
-            const ctx = document.getElementById(`chart-${item.id}`).getContext('2d');
-            
-            let chartColor = isActive ? '#00C853' : '#6b7280';
-            let gradient = ctx.createLinearGradient(0, 0, 0, 64);
-            if (isActive) {
-                gradient.addColorStop(0, 'rgba(0, 200, 83, 0.4)');
-                gradient.addColorStop(1, 'rgba(0, 200, 83, 0.0)');
-            } else {
-                gradient.addColorStop(0, 'rgba(107, 114, 128, 0.4)');
-                gradient.addColorStop(1, 'rgba(107, 114, 128, 0.0)');
-            }
-
-            new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: prices,
-                        borderColor: chartColor,
-                        backgroundColor: gradient,
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        pointHoverRadius: 4,
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { 
-                        legend: { display: false }, 
-                        tooltip: { 
-                            enabled: true,
-                            callbacks: {
-                                label: function(context) {
-                                    return formatMoney(context.parsed.y);
-                                }
-                            }
-                        } 
-                    },
-                    scales: {
-                        x: { display: false },
-                        y: { display: false, min: Math.min(...prices) - (Math.min(...prices) * 0.05) }
-                    },
-                    interaction: { mode: 'index', intersect: false }
-                }
+            let best = null;
+            offers.forEach((e) => {
+              const p = e.h.last_price || 0;
+              if (p > 0 && (!best || p < best.h.last_price)) best = e;
             });
+
+            const price = best ? best.h.last_price : 0;
+            const target = item.target_price || 0;
+            const bestHist = best ? best.h : {};
+            const series = (bestHist.history || []).filter((d) => d.price > 0);
+            const peak = series.length ? Math.max(...series.map((d) => d.price)) : price;
+            const discountPct = peak > 0 && price > 0 ? (peak - price) / peak : 0;
+            const targetDelta = target > 0 && price > 0 ? (price - target) / target : Infinity;
+            const lastChecked = bestHist.last_checked;
+
+            return {
+              item,
+              isActive,
+              offers,
+              best,
+              price,
+              target,
+              series,
+              discountPct,
+              targetDelta,
+              belowTarget: target > 0 && price > 0 && price <= target,
+              lastChecked,
+            };
           });
 
-          lucide.createIcons();
-        } catch (error) {
-          console.error("Erro ao carregar dados:", error);
-          document.getElementById("products-grid").innerHTML =
-            '<p class="text-red-500 text-center col-span-full py-10">Erro ao carregar dados. Verifique se o backend está a correr.</p>';
+          // Stats
+          document.getElementById("stat-total").innerText = rows.length;
+          document.getElementById("stat-active").innerText = rows.filter((r) => r.isActive).length;
+          document.getElementById("stat-below").innerText = rows.filter((r) => r.belowTarget).length;
+
+          // Category filter options
+          const cats = [...new Set(items.map((i) => i.category).filter(Boolean))].sort();
+          const catSel = document.getElementById("category");
+          const cur = catSel.value;
+          catSel.innerHTML = '<option value="">Todas as categorias</option>' + cats.map((c) => `<option>${c}</option>`).join("");
+          catSel.value = cur;
+
+          applyView();
+        } catch (e) {
+          console.error(e);
+          document.getElementById("list").innerHTML =
+            '<p class="text-red-500 text-center py-10">Erro ao carregar dados. O backend está a correr?</p>';
+        }
+      }
+
+      function applyView() {
+        const q = document.getElementById("search").value.toLowerCase().trim();
+        const cat = document.getElementById("category").value;
+        const sort = document.getElementById("sort").value;
+        const activeOnly = document.getElementById("active-only").checked;
+
+        let view = rows.filter((r) => {
+          if (activeOnly && !r.isActive) return false;
+          if (cat && r.item.category !== cat) return false;
+          if (q && !r.item.name.toLowerCase().includes(q)) return false;
+          return true;
+        });
+
+        view.sort((a, b) => {
+          if (sort === "name") return a.item.name.localeCompare(b.item.name);
+          if (sort === "recent") return new Date(b.lastChecked || 0) - new Date(a.lastChecked || 0);
+          if (sort === "discount") return b.discountPct - a.discountPct;
+          return a.targetDelta - b.targetDelta; // "target": closest to / below target first
+        });
+
+        renderList(view);
+      }
+
+      function renderList(view) {
+        charts.forEach((c) => c.destroy());
+        charts = [];
+
+        const list = document.getElementById("list");
+        document.getElementById("empty").classList.toggle("hidden", view.length > 0);
+
+        list.innerHTML = view
+          .map((r) => {
+            const item = r.item;
+            const deltaBadge =
+              r.target > 0 && r.price > 0
+                ? r.belowTarget
+                  ? `<span class="text-xs font-semibold text-ninja">▼ ${formatMoney(r.target - r.price)} abaixo</span>`
+                  : `<span class="text-xs font-semibold text-gray-500">${formatMoney(r.price - r.target)} acima do alvo</span>`
+                : "";
+            const discountBadge =
+              r.discountPct > 0.001
+                ? `<span class="text-xs text-gray-500">−${(r.discountPct * 100).toFixed(0)}% do pico</span>`
+                : "";
+
+            return `
+            <div class="group bg-card border border-gray-800 rounded-xl hover:border-ninja transition-all ${r.isActive ? "" : "opacity-60"}">
+              <div class="flex items-center gap-4 p-4">
+                <a href="/item.html?id=${encodeURIComponent(item.id)}" class="flex-1 min-w-0 flex items-center gap-4">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-[10px] font-semibold px-2 py-0.5 bg-gray-800 text-gray-300 rounded-full">${item.category || "Monitoramento"}</span>
+                      ${r.isActive ? "" : '<span class="text-[10px] font-semibold px-2 py-0.5 bg-red-500/20 text-red-500 rounded-full">Pausado</span>'}
+                    </div>
+                    <h3 class="text-white font-medium truncate group-hover:text-ninja transition-colors" title="${item.name}">${item.name}</h3>
+                    <div class="flex items-center gap-3 mt-1">
+                      <span class="text-xs text-gray-500">${r.best ? r.best.offer.store : "sem oferta"} · ${relTime(r.lastChecked)}</span>
+                      ${discountBadge}
+                    </div>
+                  </div>
+                  <div class="hidden sm:block w-28 h-12 shrink-0"><canvas data-spark="${item.id}"></canvas></div>
+                  <div class="text-right shrink-0 w-32">
+                    <div class="text-xl font-bold ${r.belowTarget ? "text-ninja" : "text-white"}">${formatMoney(r.price)}</div>
+                    <div class="text-xs text-gray-500">Alvo ${formatMoney(r.target)}</div>
+                    ${deltaBadge}
+                  </div>
+                </a>
+                <div class="flex flex-col gap-2 shrink-0 text-gray-500">
+                  <button onclick="toggleActive('${item.id}', event)" class="hover:text-white transition-colors" title="${r.isActive ? "Pausar" : "Ativar"}">
+                    <i data-lucide="${r.isActive ? "pause" : "play"}" class="w-4 h-4"></i>
+                  </button>
+                  <button onclick="deleteItem('${item.id}', '${item.name.replace(/'/g, "\\'")}', event)" class="hover:text-red-500 transition-colors" title="Remover">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              </div>
+            </div>`;
+          })
+          .join("");
+
+        lucide.createIcons();
+
+        // Sparklines (stepped — prices are step functions)
+        view.forEach((r) => {
+          const canvas = list.querySelector(`canvas[data-spark="${CSS.escape(r.item.id)}"]`);
+          if (!canvas) return;
+          const pts = r.series.map((d) => d.price);
+          if (pts.length === 0 && r.price > 0) pts.push(r.price, r.price);
+          if (pts.length === 1) pts.unshift(pts[0]);
+          const color = r.isActive ? "#00C853" : "#6b7280";
+          const ctx = canvas.getContext("2d");
+          const grad = ctx.createLinearGradient(0, 0, 0, 48);
+          grad.addColorStop(0, r.isActive ? "rgba(0,200,83,0.35)" : "rgba(107,114,128,0.3)");
+          grad.addColorStop(1, "rgba(0,0,0,0)");
+          charts.push(
+            new Chart(ctx, {
+              type: "line",
+              data: {
+                labels: pts.map((_, i) => i),
+                datasets: [{ data: pts, borderColor: color, backgroundColor: grad, borderWidth: 1.5, pointRadius: 0, stepped: true, fill: true }],
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: false,
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                scales: { x: { display: false }, y: { display: false } },
+              },
+            })
+          );
+        });
+      }
+
+      async function toggleActive(id, ev) {
+        if (ev) ev.preventDefault();
+        const r = rows.find((x) => x.item.id === id);
+        if (!r) return;
+        const item = r.item;
+        const payload = {
+          target_price: item.target_price,
+          name: item.name,
+          active: !r.isActive,
+          alert_any_price_drop: item.alert_any_price_drop || false,
+          sticky: item.sticky || false,
+          notify_email: item.notify_email || false,
+        };
+        try {
+          const res = await fetch(`/items?id=${encodeURIComponent(id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (res.ok) loadDashboard();
+          else alert("Erro ao atualizar estado.");
+        } catch (e) {
+          alert("Erro de conexão ao servidor.");
+        }
+      }
+
+      async function deleteItem(id, name, ev) {
+        if (ev) ev.preventDefault();
+        if (!confirm(`Remover "${name}" do rastreamento?`)) return;
+        try {
+          const res = await fetch(`/items?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+          if (res.ok) loadDashboard();
+          else alert("Erro ao remover: " + (await res.text()));
+        } catch (e) {
+          alert("Erro de conexão ao servidor.");
         }
       }
 

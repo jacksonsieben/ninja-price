@@ -32,7 +32,7 @@ func ScrapePrice(pageURL string, manualSelector string) (float64, string, error)
 		}
 	}
 
-	doc, err := fetchHeavy(pageURL)
+	doc, err := fetchHeavy(pageURL, manualSelector)
 	if err != nil {
 		return 0, "", fmt.Errorf("error scraping with headless browser: %v", err)
 	}
@@ -52,7 +52,7 @@ func DetectPrice(pageURL string) (price float64, source string, name string, err
 
 	doc, status, ferr := fetchLight(pageURL)
 	if ferr != nil || isBotChallenge(status, doc) {
-		doc, ferr = fetchHeavy(pageURL)
+		doc, ferr = fetchHeavy(pageURL, "")
 		if ferr != nil {
 			return 0, "", "", fmt.Errorf("error scraping with headless browser: %v", ferr)
 		}
@@ -122,7 +122,15 @@ func fetchLight(pageURL string) (*goquery.Document, int, error) {
 // page, which solves JS-based bot challenges (Cloudflare, DataDome) that
 // fetchLight can't get past. It closes immediately after grabbing the
 // rendered HTML to free RAM.
-func fetchHeavy(pageURL string) (*goquery.Document, error) {
+//
+// When waitSelector is non-empty, fetchHeavy waits for that element to become
+// visible before grabbing the HTML. Many stores (e.g. pccomponentes.pt)
+// populate the price node via JavaScript after load, so a blind settle would
+// intermittently capture the page before the price rendered — the cause of the
+// same offer flapping between a valid "manual" reading and "could not find a
+// price". If the selector never appears we still fall through and grab whatever
+// rendered, so generic JSON-LD/meta detection can still succeed.
+func fetchHeavy(pageURL, waitSelector string) (*goquery.Document, error) {
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.Flag("headless", true),
 		chromedp.Flag("disable-gpu", true),
@@ -140,16 +148,27 @@ func fetchHeavy(pageURL string) (*goquery.Document, error) {
 	ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
+	// Navigate and let the page settle. With a known price selector, wait for
+	// it to render (bounded so a missing selector can't burn the whole budget);
+	// otherwise use a fixed settle that also gives Cloudflare/DataDome
+	// challenges time to resolve. Errors here are best-effort — we still try to
+	// grab the rendered HTML below.
+	settleCtx, settleCancel := context.WithTimeout(ctx, 15*time.Second)
+	if waitSelector != "" {
+		_ = chromedp.Run(settleCtx,
+			chromedp.Navigate(pageURL),
+			chromedp.WaitVisible(waitSelector, chromedp.ByQuery),
+		)
+	} else {
+		_ = chromedp.Run(settleCtx,
+			chromedp.Navigate(pageURL),
+			chromedp.Sleep(4*time.Second),
+		)
+	}
+	settleCancel()
+
 	var renderedHTML string
-	err := chromedp.Run(ctx,
-		chromedp.Navigate(pageURL),
-		// Fixed settle time instead of WaitVisible(selector): fetchHeavy runs
-		// generic detection (JSON-LD/meta/known-site), not a specific selector,
-		// and this also gives Cloudflare/DataDome challenges time to resolve.
-		chromedp.Sleep(4*time.Second),
-		chromedp.OuterHTML("html", &renderedHTML),
-	)
-	if err != nil {
+	if err := chromedp.Run(ctx, chromedp.OuterHTML("html", &renderedHTML)); err != nil {
 		return nil, err
 	}
 

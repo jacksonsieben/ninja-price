@@ -32,6 +32,7 @@ func NewAPI(configPath, historyPath string) *API {
 func (a *API) Start(port int) {
 	http.HandleFunc("/", a.handleDashboard)
 	http.HandleFunc("/discover.html", a.handleDiscoverPage)
+	http.HandleFunc("/item.html", a.handleItemPage)
 	http.HandleFunc("/history", a.handleHistory)
 	http.HandleFunc("/items", a.handleItems)
 	http.HandleFunc("/config", a.handleConfig)
@@ -60,6 +61,10 @@ func (a *API) handleDiscoverPage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "discover.html")
 }
 
+func (a *API) handleItemPage(w http.ResponseWriter, r *http.Request) {
+	http.ServeFile(w, r, "item.html")
+}
+
 func (a *API) handleConfig(w http.ResponseWriter, r *http.Request) {
 	// Enable CORS for bookmarklet usage
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -69,6 +74,12 @@ func (a *API) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Never let the browser cache the config. http.ServeFile sets a
+	// Last-Modified header with 1-second resolution, so a product added and
+	// re-fetched within the same second returns a stale 304 and the new item
+	// is missing from the extension's product dropdown until something else
+	// invalidates the cache ("takes a while or never to show up").
+	w.Header().Set("Cache-Control", "no-store")
 	http.ServeFile(w, r, a.configPath)
 }
 
@@ -81,6 +92,7 @@ func (a *API) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	http.ServeFile(w, r, a.historyPath)
 }
 
@@ -188,6 +200,7 @@ func (a *API) handleItemsPut(w http.ResponseWriter, r *http.Request) {
 	var update struct {
 		TargetPrice       float64 `json:"target_price"`
 		Name              string  `json:"name"`
+		Category          *string `json:"category"` // pointer: only updated when the caller actually sends it
 		Active            bool    `json:"active"`
 		AlertAnyPriceDrop bool    `json:"alert_any_price_drop"`
 		Sticky            bool    `json:"sticky"`
@@ -209,6 +222,9 @@ func (a *API) handleItemsPut(w http.ResponseWriter, r *http.Request) {
 		if product.ID == id {
 			cfg.Items[i].TargetPrice = update.TargetPrice
 			cfg.Items[i].Name = update.Name
+			if update.Category != nil {
+				cfg.Items[i].Category = *update.Category
+			}
 			cfg.Items[i].Active = update.Active
 			cfg.Items[i].AlertAnyPriceDrop = update.AlertAnyPriceDrop
 			cfg.Items[i].Sticky = update.Sticky
@@ -300,11 +316,15 @@ func (a *API) handleItemsPost(w http.ResponseWriter, r *http.Request) {
 // by accepted /discover suggestions.
 func (a *API) handleProductOffers(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusOK)
+		return
+	}
+	if r.Method == http.MethodDelete {
+		a.handleProductOfferDelete(w, r)
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -369,6 +389,59 @@ func (a *API) handleProductOffers(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{"status": "Offer added successfully"})
+}
+
+// handleProductOfferDelete removes a single offer from a product, identified by
+// the offer's ID (?offer_id=). Used by the item detail page to drop bad offers
+// — e.g. wrong-product matches added by LLM discovery. The product itself and
+// its other offers are left untouched; deleting the last remaining offer is
+// allowed (the product simply has nothing to check until one is re-added).
+func (a *API) handleProductOfferDelete(w http.ResponseWriter, r *http.Request) {
+	productID := r.PathValue("id")
+	offerID := r.URL.Query().Get("offer_id")
+	if productID == "" || offerID == "" {
+		http.Error(w, "Missing product id or offer_id", http.StatusBadRequest)
+		return
+	}
+
+	cfg, err := config.LoadConfig(a.configPath)
+	if err != nil {
+		http.Error(w, "Error loading config", http.StatusInternalServerError)
+		return
+	}
+
+	productFound, offerFound := false, false
+	for i := range cfg.Items {
+		if cfg.Items[i].ID != productID {
+			continue
+		}
+		productFound = true
+		kept := cfg.Items[i].Offers[:0]
+		for _, o := range cfg.Items[i].Offers {
+			if o.ID == offerID {
+				offerFound = true
+				continue
+			}
+			kept = append(kept, o)
+		}
+		cfg.Items[i].Offers = kept
+		break
+	}
+
+	if !productFound {
+		http.Error(w, "Product not found", http.StatusNotFound)
+		return
+	}
+	if !offerFound {
+		http.Error(w, "Offer not found", http.StatusNotFound)
+		return
+	}
+
+	if err := config.SaveConfig(a.configPath, cfg); err != nil {
+		http.Error(w, "Error saving config", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 // recordInitialPrice scrapes a newly created offer once, immediately, so the

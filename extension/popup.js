@@ -42,7 +42,7 @@ els.modeExistingBtn.addEventListener("click", () => setMode("existing"));
 
 async function loadExistingProducts() {
   try {
-    const res = await fetch(`${API_BASE}/config`);
+    const res = await fetch(`${API_BASE}/config`, { cache: "no-store" });
     if (!res.ok) return { products: [] };
     const config = await res.json();
     const products = config.items || [];

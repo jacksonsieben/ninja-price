@@ -11,7 +11,25 @@ import (
 // price via JSON-LD or meta tags. Keep this small: only add an entry once
 // generic detection has been confirmed not to work for that domain.
 var knownSiteSelectors = map[string][]string{
-	"amazon.": {".a-price .a-offscreen", ".a-price-whole"},
+	// Amazon renders many .a-price .a-offscreen nodes on a single product page
+	// (other sellers, warehouse deals, "buy new", related/sponsored products).
+	// A bare ".a-price .a-offscreen" grabs whichever renders first, so when the
+	// buy box itself is unavailable it latches onto an unrelated offer and the
+	// recorded price jumps around between checks. Scope strictly to the buy-box
+	// "price to pay" inside the core price widget, and exclude the struck-through
+	// list price. If none match (e.g. the offer is genuinely out of stock) we
+	// fall through and let ScrapePrice report "no price" — better to skip a check
+	// than to record a wrong number.
+	"amazon.": {
+		"#corePriceDisplay_desktop_feature_div span.priceToPay .a-offscreen",
+		"#corePrice_feature_div span.priceToPay .a-offscreen",
+		"#apex_desktop span.priceToPay .a-offscreen",
+		"#corePriceDisplay_desktop_feature_div span.a-price:not(.a-text-price) .a-offscreen",
+		"#corePrice_feature_div span.a-price:not(.a-text-price) .a-offscreen",
+		"#priceblock_ourprice",
+		"#priceblock_dealprice",
+		"#priceblock_saleprice",
+	},
 }
 
 // extractSelector reads the text of the first element matching selector and

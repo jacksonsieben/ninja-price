@@ -1,7 +1,8 @@
 [Desktop Entry]
 Type=Application
 Name=NinjaPrice
-Path=*path-to-repo*/ninja-price/ninjaprice
+# Path is the working directory and must be a directory, not the binary.
+Path=*path-to-repo*/ninja-price
 Exec=*path-to-repo*/ninja-price/ninjaprice
 # optionally you can have the logs to somewhere
 # Exec=/bin/bash -c '*path-to-repo*/ninja-price/ninjaprice >> *path-to-repo*/ninja-price/ninjaprice.log 2>&1'

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -26,6 +27,23 @@ const (
 
 func main() {
 	log.Println("NinjaPrice starting...")
+
+	// Resolve all relative paths (config.json, prices_history.json,
+	// dashboard.html, assets/) against the binary's own directory instead of
+	// the process working directory. Launchers like the .desktop autostart
+	// entry don't set a reliable CWD, so previously NinjaPrice would read/write
+	// a second, empty config.json in $HOME. Products added through the
+	// extension then landed in that stray file and never showed up in the
+	// dashboard or the extension's product list.
+	if exe, err := os.Executable(); err != nil {
+		log.Printf("Warning: could not determine executable path, using current working directory: %v", err)
+	} else if dir := filepath.Dir(exe); dir != "" {
+		if err := os.Chdir(dir); err != nil {
+			log.Printf("Warning: could not chdir to executable dir %s: %v", dir, err)
+		} else {
+			log.Printf("Working directory set to %s", dir)
+		}
+	}
 
 	// Start local API in background
 	go func() {
@@ -165,7 +183,10 @@ func checkPrices() {
 				diff := previousBest - bestPrice
 				title = "Price Drop: " + product.Name
 				msg = fmt.Sprintf("Price dropped by %.2f! Now %.2f", diff, bestPrice)
-				// Regular price drop can also be sticky, or you can change this to false for transient notifications
+				// Honor the product's sticky setting for drops too, not just
+				// target hits — otherwise a product marked sticky still got a
+				// transient (auto-dismissed) notification on a plain price drop.
+				sticky = product.Sticky
 			}
 			if title != "" {
 				notifier.Notify(title, msg, sticky)

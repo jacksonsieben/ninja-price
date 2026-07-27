@@ -8,7 +8,10 @@ const API_BASE = "http://localhost:65452";
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg || msg.type !== "NP_FETCH") return false;
 
-  const options = { method: msg.method || "GET" };
+  // no-store so the extension always sees the current config/history rather
+  // than a stale browser-cached copy (a freshly added product would otherwise
+  // be missing from the "existing product" dropdown).
+  const options = { method: msg.method || "GET", cache: "no-store" };
   if (msg.body !== undefined) {
     options.headers = { "Content-Type": "application/json" };
     options.body = JSON.stringify(msg.body);

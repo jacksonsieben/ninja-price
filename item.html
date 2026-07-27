@@ -1,0 +1,530 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🥷 NinjaPrice — Produto</title>
+    <link rel="icon" type="image/png" href="assets/icon.png" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- bundle = chart.js date adapter + date-fns, needed for the time x-axis -->
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: { ninja: "#00C853", dark: "#121212", darker: "#0a0a0a", card: "#1e1e1e" },
+          },
+        },
+      };
+    </script>
+    <style>
+      body { background-color: #0a0a0a; color: #e5e5e5; }
+      .ninja-glow { box-shadow: 0 0 15px rgba(0, 200, 83, 0.1); }
+      canvas { outline: none; }
+      .range-btn.active { background: #00C853; color: #000; font-weight: 700; }
+      .store-chip.off { opacity: 0.35; text-decoration: line-through; }
+    </style>
+  </head>
+  <body class="min-h-screen p-4 md:p-10">
+    <div class="max-w-5xl mx-auto">
+      <a href="/" class="inline-flex items-center gap-2 text-gray-400 hover:text-white transition-colors mb-6 text-sm">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i> Voltar ao dashboard
+      </a>
+
+      <div id="content"><p class="text-gray-500 py-20 text-center">A carregar…</p></div>
+    </div>
+
+    <!-- Settings modal -->
+    <div id="edit-modal" class="fixed inset-0 bg-black/80 z-50 hidden items-center justify-center backdrop-blur-sm">
+      <div class="bg-card border border-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl">
+        <h2 class="text-xl font-bold text-white mb-5 flex items-center gap-2">
+          <i data-lucide="settings" class="w-5 h-5 text-ninja"></i> Configurações
+        </h2>
+        <form id="edit-form" onsubmit="submitEditForm(event)">
+          <div class="mb-4">
+            <label class="block text-sm text-gray-400 mb-1">Nome do Produto</label>
+            <input type="text" id="edit-name" class="w-full bg-darker border border-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:border-ninja" required />
+          </div>
+          <div class="mb-4">
+            <label class="block text-sm text-gray-400 mb-1">Categoria</label>
+            <input type="text" id="edit-category" list="category-list" placeholder="Ex: Periféricos" class="w-full bg-darker border border-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:border-ninja" />
+            <datalist id="category-list"></datalist>
+          </div>
+          <div class="mb-5">
+            <label class="block text-sm text-gray-400 mb-1">Preço Alvo (€)</label>
+            <input type="number" id="edit-target" step="0.01" class="w-full bg-darker border border-gray-700 text-white rounded-lg px-3 py-2 focus:outline-none focus:border-ninja" required />
+          </div>
+          <div class="space-y-3 mb-6 bg-darker p-4 rounded-lg border border-gray-800">
+            <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="edit-active" class="w-4 h-4 accent-ninja" /><span class="text-sm text-gray-300">Rastreamento Ativo</span></label>
+            <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="edit-drop" class="w-4 h-4 accent-ninja" /><span class="text-sm text-gray-300">Alertar qualquer queda de preço</span></label>
+            <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="edit-sticky" class="w-4 h-4 accent-ninja" /><span class="text-sm text-gray-300">Notificação Fixa (Sticky)</span></label>
+            <label class="flex items-center gap-3 cursor-pointer"><input type="checkbox" id="edit-email" class="w-4 h-4 accent-ninja" /><span class="text-sm text-gray-300">Notificar por email (requer SMTP)</span></label>
+          </div>
+          <div class="flex justify-end gap-3 pt-4 border-t border-gray-800">
+            <button type="button" onclick="closeModal()" class="px-4 py-2 text-sm text-gray-400 hover:text-white">Cancelar</button>
+            <button type="submit" class="px-4 py-2 text-sm bg-ninja text-black font-semibold rounded-lg hover:bg-[#00e65c]">Salvar</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script>
+      // ---------------------------------------------------------------------
+      // Utilities
+      // ---------------------------------------------------------------------
+      const fetchOpts = { cache: "no-store" };
+      const productId = new URLSearchParams(location.search).get("id");
+
+      const formatMoney = (v) =>
+        v === undefined || v === null || v === 0
+          ? "—"
+          : new Intl.NumberFormat("pt-PT", { style: "currency", currency: "EUR" }).format(v);
+
+      const STORE_COLORS = ["#00C853", "#42A5F5", "#FFB300", "#EF5350", "#AB47BC", "#26C6DA", "#EC407A", "#9CCC65"];
+      const RANGES = { "1M": 30, "3M": 90, "6M": 180, "1Y": 365, "All": null };
+
+      function relTime(dateStr) {
+        if (!dateStr) return "—";
+        const diff = (Date.now() - new Date(dateStr).getTime()) / 1000;
+        if (diff < 90) return "agora";
+        if (diff < 3600) return Math.round(diff / 60) + "m atrás";
+        if (diff < 86400) return Math.round(diff / 3600) + "h atrás";
+        return Math.round(diff / 86400) + "d atrás";
+      }
+
+      // ---------------------------------------------------------------------
+      // State
+      // ---------------------------------------------------------------------
+      const state = {
+        product: null,
+        offers: [], // { offer, points:[{x:Date,y}], last, low, high, color, hidden }
+        categories: [], // all category names across products, for the datalist
+        range: "3M",
+        showAverage: false,
+        chart: null,
+      };
+
+      // ---------------------------------------------------------------------
+      // Load
+      // ---------------------------------------------------------------------
+      async function load() {
+        if (!productId) {
+          document.getElementById("content").innerHTML =
+            '<p class="text-red-500 py-20 text-center">Produto não especificado.</p>';
+          return;
+        }
+        try {
+          const [cfgRes, histRes] = await Promise.all([
+            fetch("/config", fetchOpts),
+            fetch("/history", fetchOpts),
+          ]);
+          const config = await cfgRes.json();
+          const history = await histRes.json();
+          const items = config.items || [];
+          const histItems = history.items || {};
+
+          state.categories = [...new Set(items.map((p) => p.category).filter(Boolean))].sort();
+
+          const product = items.find((p) => p.id === productId);
+          if (!product) {
+            document.getElementById("content").innerHTML =
+              '<p class="text-red-500 py-20 text-center">Produto não encontrado.</p>';
+            return;
+          }
+          state.product = product;
+
+          state.offers = (product.offers || []).map((offer, i) => {
+            const h = histItems[offer.id] || {};
+            const raw = (h.history || [])
+              .map((d) => ({ x: new Date(d.date), y: d.price }))
+              .filter((p) => p.y > 0)
+              .sort((a, b) => a.x - b.x);
+            // Extend a flat tail to "now" at the last known price so the step
+            // line reaches the present instead of stopping at the last change.
+            const points = raw.slice();
+            if (h.last_price > 0) {
+              const now = new Date();
+              const lastPt = points[points.length - 1];
+              if (!lastPt || +lastPt.x < +now) points.push({ x: now, y: h.last_price });
+            }
+            const ys = raw.map((p) => p.y);
+            return {
+              offer,
+              points,
+              last: h.last_price || 0,
+              low: h.lowest_price || (ys.length ? Math.min(...ys) : 0),
+              high: ys.length ? Math.max(...ys) : 0,
+              lastChecked: h.last_checked,
+              color: STORE_COLORS[i % STORE_COLORS.length],
+              hidden: false,
+            };
+          });
+
+          render();
+        } catch (e) {
+          console.error(e);
+          document.getElementById("content").innerHTML =
+            '<p class="text-red-500 py-20 text-center">Erro ao carregar dados. O backend está a correr?</p>';
+        }
+      }
+
+      // ---------------------------------------------------------------------
+      // Series math
+      // ---------------------------------------------------------------------
+      function cutoffDate() {
+        const days = RANGES[state.range];
+        if (!days) return null;
+        return new Date(Date.now() - days * 86400 * 1000);
+      }
+
+      // Clip a series to [cutoff, now]; prepend a boundary point carrying the
+      // price that was active at the cutoff so the step line starts correctly.
+      function clip(points, cutoff) {
+        if (!cutoff) return points.slice();
+        const out = [];
+        let boundaryVal = null;
+        for (const p of points) {
+          if (+p.x < +cutoff) boundaryVal = p.y;
+          else out.push(p);
+        }
+        if (boundaryVal !== null) out.unshift({ x: cutoff, y: boundaryVal });
+        return out;
+      }
+
+      function priceAsOf(points, t) {
+        let val = null;
+        for (const p of points) {
+          if (+p.x <= t) val = p.y;
+          else break;
+        }
+        return val;
+      }
+
+      // Average across currently-visible stores, forward-filling each store's
+      // last known price at every timestamp any of them changed.
+      function averageSeries(visible) {
+        const times = new Set();
+        visible.forEach((s) => s.points.forEach((p) => times.add(+p.x)));
+        return [...times]
+          .sort((a, b) => a - b)
+          .map((t) => {
+            let sum = 0,
+              n = 0;
+            visible.forEach((s) => {
+              const v = priceAsOf(s.points, t);
+              if (v !== null) {
+                sum += v;
+                n++;
+              }
+            });
+            return n ? { x: new Date(t), y: sum / n } : null;
+          })
+          .filter(Boolean);
+      }
+
+      // ---------------------------------------------------------------------
+      // Chart
+      // ---------------------------------------------------------------------
+      function buildChart() {
+        const cutoff = cutoffDate();
+        const visible = state.offers.filter((s) => !s.hidden && s.points.length);
+
+        const datasets = visible.map((s) => ({
+          label: s.offer.store,
+          data: clip(s.points, cutoff),
+          borderColor: s.color,
+          backgroundColor: s.color,
+          borderWidth: 2,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+          stepped: true, // prices are step functions — no fake curves
+          tension: 0,
+          fill: false,
+        }));
+
+        if (state.showAverage && visible.length > 1) {
+          datasets.push({
+            label: "Média",
+            data: clip(averageSeries(visible), cutoff),
+            borderColor: "#e5e5e5",
+            borderWidth: 1.5,
+            borderDash: [5, 4],
+            pointRadius: 0,
+            stepped: true,
+            tension: 0,
+            fill: false,
+          });
+        }
+
+        // Target line spanning the visible x-range.
+        const target = state.product.target_price || 0;
+        if (target > 0 && datasets.length) {
+          const allX = datasets.flatMap((d) => d.data.map((p) => +p.x));
+          if (allX.length) {
+            datasets.push({
+              label: "Alvo",
+              data: [
+                { x: new Date(Math.min(...allX)), y: target },
+                { x: new Date(Math.max(...allX)), y: target },
+              ],
+              borderColor: "#00C853",
+              borderWidth: 1,
+              borderDash: [2, 3],
+              pointRadius: 0,
+              stepped: false,
+              tension: 0,
+              fill: false,
+            });
+          }
+        }
+
+        const ctx = document.getElementById("price-chart").getContext("2d");
+        if (state.chart) state.chart.destroy();
+        state.chart = new Chart(ctx, {
+          type: "line",
+          data: { datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            interaction: { mode: "nearest", axis: "x", intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  title: (items) =>
+                    items.length ? new Date(items[0].parsed.x).toLocaleString("pt-PT") : "",
+                  label: (c) => `${c.dataset.label}: ${formatMoney(c.parsed.y)}`,
+                },
+              },
+            },
+            scales: {
+              x: {
+                type: "time",
+                time: { tooltipFormat: "PPpp" },
+                ticks: { color: "#6b7280", maxRotation: 0, autoSkip: true, maxTicksLimit: 6 },
+                grid: { color: "rgba(255,255,255,0.05)" },
+              },
+              y: {
+                grace: "8%",
+                ticks: { color: "#6b7280", callback: (v) => "€" + v },
+                grid: { color: "rgba(255,255,255,0.05)" },
+              },
+            },
+          },
+        });
+      }
+
+      // ---------------------------------------------------------------------
+      // Render
+      // ---------------------------------------------------------------------
+      function render() {
+        const p = state.product;
+        const withPrice = state.offers.filter((s) => s.last > 0);
+        const best = withPrice.length ? withPrice.reduce((a, b) => (a.last <= b.last ? a : b)) : null;
+        const allLows = state.offers.filter((s) => s.low > 0).map((s) => s.low);
+        const allHighs = state.offers.filter((s) => s.high > 0).map((s) => s.high);
+        const lowestEver = allLows.length ? Math.min(...allLows) : 0;
+        const highestEver = allHighs.length ? Math.max(...allHighs) : 0;
+        const target = p.target_price || 0;
+        const isActive = p.active !== undefined ? p.active : true;
+        const belowTarget = best && target > 0 && best.last <= target;
+
+        const stat = (label, value, cls = "text-white") =>
+          `<div class="bg-card border border-gray-800 rounded-xl px-4 py-3">
+             <div class="text-xs text-gray-500 uppercase tracking-wide mb-1">${label}</div>
+             <div class="text-lg font-bold ${cls}">${value}</div>
+           </div>`;
+
+        document.getElementById("content").innerHTML = `
+          <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-6">
+            <div>
+              <div class="flex items-center gap-3 mb-2">
+                <span class="text-xs font-semibold px-3 py-1 bg-gray-800 text-gray-300 rounded-full">${p.category || "Monitoramento"}</span>
+                <span class="text-xs font-semibold px-3 py-1 rounded-full ${isActive ? "bg-ninja/20 text-ninja" : "bg-red-500/20 text-red-500"}">${isActive ? "Ativo" : "Pausado"}</span>
+              </div>
+              <h1 class="text-2xl md:text-3xl font-bold text-white leading-tight">${p.name}</h1>
+              <p class="text-gray-400 mt-1">
+                ${best ? `Melhor: <span class="text-ninja font-semibold">${formatMoney(best.last)}</span> @ ${best.offer.store}` : "Sem preço ainda"}
+              </p>
+            </div>
+            <button onclick="openModal()" class="shrink-0 flex items-center gap-2 bg-card border border-gray-700 hover:border-ninja text-white px-4 py-2.5 rounded-lg transition-colors">
+              <i data-lucide="settings" class="w-4 h-4"></i> Configurações
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+            ${stat("Preço Atual", best ? formatMoney(best.last) : "—", belowTarget ? "text-ninja" : "text-white")}
+            ${stat("Mais Baixo", formatMoney(lowestEver), "text-ninja")}
+            ${stat("Mais Alto", formatMoney(highestEver))}
+            ${stat("Preço Alvo", target ? formatMoney(target) : "—")}
+          </div>
+
+          <div class="bg-card border border-gray-800 rounded-2xl p-4 md:p-6 mb-6 ninja-glow">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div class="flex gap-1 bg-darker rounded-lg p-1">
+                ${Object.keys(RANGES)
+                  .map(
+                    (r) =>
+                      `<button class="range-btn text-xs px-3 py-1.5 rounded-md text-gray-400 hover:text-white transition-colors ${r === state.range ? "active" : ""}" onclick="setRange('${r}')">${r}</button>`
+                  )
+                  .join("")}
+              </div>
+              <label class="flex items-center gap-2 text-sm text-gray-400 cursor-pointer">
+                <input type="checkbox" class="w-4 h-4 accent-ninja" ${state.showAverage ? "checked" : ""} onchange="toggleAverage(this.checked)" />
+                Mostrar média
+              </label>
+            </div>
+
+            <div class="h-72 md:h-80"><canvas id="price-chart"></canvas></div>
+
+            <div class="flex flex-wrap gap-2 mt-4">
+              ${state.offers
+                .map(
+                  (s, i) =>
+                    `<button class="store-chip ${s.hidden ? "off" : ""} flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-gray-700 hover:border-gray-500 transition-all" onclick="toggleStore(${i})">
+                       <span class="w-2.5 h-2.5 rounded-full" style="background:${s.color}"></span>
+                       ${s.offer.store}
+                     </button>`
+                )
+                .join("")}
+            </div>
+          </div>
+
+          <div class="bg-card border border-gray-800 rounded-2xl overflow-hidden mb-6">
+            <div class="px-5 py-3 border-b border-gray-800 flex items-center justify-between">
+              <h2 class="font-semibold text-white flex items-center gap-2"><i data-lucide="store" class="w-4 h-4 text-ninja"></i> Ofertas</h2>
+              <a href="/discover.html?product_id=${p.id}" class="text-ninja hover:text-white text-sm flex items-center gap-1"><i data-lucide="search" class="w-4 h-4"></i> Encontrar noutras lojas</a>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="text-gray-500 text-xs uppercase tracking-wide">
+                  <tr class="border-b border-gray-800">
+                    <th class="text-left px-5 py-2 font-medium">Loja</th>
+                    <th class="text-right px-3 py-2 font-medium">Agora</th>
+                    <th class="text-right px-3 py-2 font-medium">Mín</th>
+                    <th class="text-right px-3 py-2 font-medium">Máx</th>
+                    <th class="text-right px-3 py-2 font-medium">Verificado</th>
+                    <th class="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${state.offers
+                    .map((s) => {
+                      const isBest = best && s.offer.id === best.offer.id;
+                      return `<tr class="border-b border-gray-800/60 ${isBest ? "bg-ninja/5" : ""}">
+                        <td class="px-5 py-3">
+                          <span class="inline-flex items-center gap-2">
+                            <span class="w-2.5 h-2.5 rounded-full" style="background:${s.color}"></span>
+                            <a href="${s.offer.url}" target="_blank" class="hover:text-ninja transition-colors">${s.offer.store}</a>
+                            ${isBest ? '<span class="text-[10px] font-bold text-ninja">★ MELHOR</span>' : ""}
+                          </span>
+                        </td>
+                        <td class="text-right px-3 py-3 font-semibold ${isBest ? "text-ninja" : "text-white"}">${formatMoney(s.last)}</td>
+                        <td class="text-right px-3 py-3 text-gray-400">${formatMoney(s.low)}</td>
+                        <td class="text-right px-3 py-3 text-gray-400">${formatMoney(s.high)}</td>
+                        <td class="text-right px-3 py-3 text-gray-500 text-xs">${relTime(s.lastChecked)}</td>
+                        <td class="text-right px-3 py-3">
+                          <a href="${s.offer.url}" target="_blank" class="text-gray-500 hover:text-white inline-block mr-2" title="Abrir"><i data-lucide="external-link" class="w-4 h-4"></i></a>
+                          <button onclick="deleteOffer('${s.offer.id}','${s.offer.store.replace(/'/g, "\\'")}')" class="text-gray-500 hover:text-red-500" title="Remover oferta"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </td>
+                      </tr>`;
+                    })
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+
+        buildChart();
+        lucide.createIcons();
+      }
+
+      // ---------------------------------------------------------------------
+      // Interactions
+      // ---------------------------------------------------------------------
+      function setRange(r) {
+        state.range = r;
+        document.querySelectorAll(".range-btn").forEach((b) => b.classList.toggle("active", b.textContent === r));
+        buildChart();
+      }
+      function toggleAverage(v) {
+        state.showAverage = v;
+        buildChart();
+      }
+      function toggleStore(i) {
+        state.offers[i].hidden = !state.offers[i].hidden;
+        render(); // re-render so chip + chart both update
+      }
+
+      // ---------------------------------------------------------------------
+      // Settings modal + mutations
+      // ---------------------------------------------------------------------
+      function openModal() {
+        const p = state.product;
+        document.getElementById("edit-name").value = p.name;
+        document.getElementById("edit-category").value = p.category || "";
+        document.getElementById("category-list").innerHTML = state.categories
+          .map((c) => `<option value="${c.replace(/"/g, "&quot;")}"></option>`)
+          .join("");
+        document.getElementById("edit-target").value = p.target_price || 0;
+        document.getElementById("edit-active").checked = p.active !== undefined ? p.active : true;
+        document.getElementById("edit-drop").checked = p.alert_any_price_drop || false;
+        document.getElementById("edit-sticky").checked = p.sticky || false;
+        document.getElementById("edit-email").checked = p.notify_email || false;
+        const m = document.getElementById("edit-modal");
+        m.classList.remove("hidden");
+        m.classList.add("flex");
+      }
+      function closeModal() {
+        const m = document.getElementById("edit-modal");
+        m.classList.add("hidden");
+        m.classList.remove("flex");
+      }
+      async function submitEditForm(e) {
+        e.preventDefault();
+        const payload = {
+          name: document.getElementById("edit-name").value,
+          category: document.getElementById("edit-category").value.trim(),
+          target_price: parseFloat(document.getElementById("edit-target").value) || 0,
+          active: document.getElementById("edit-active").checked,
+          alert_any_price_drop: document.getElementById("edit-drop").checked,
+          sticky: document.getElementById("edit-sticky").checked,
+          notify_email: document.getElementById("edit-email").checked,
+        };
+        try {
+          const res = await fetch(`/items?id=${encodeURIComponent(productId)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) throw new Error(await res.text());
+          closeModal();
+          load();
+        } catch (err) {
+          alert("Erro ao atualizar: " + err.message);
+        }
+      }
+      async function deleteOffer(offerId, store) {
+        if (!confirm(`Remover a oferta de "${store}"?`)) return;
+        try {
+          const res = await fetch(
+            `/products/${encodeURIComponent(productId)}/offers?offer_id=${encodeURIComponent(offerId)}`,
+            { method: "DELETE" }
+          );
+          if (!res.ok) throw new Error(await res.text());
+          load();
+        } catch (err) {
+          alert("Erro ao remover oferta: " + err.message);
+        }
+      }
+
+      load();
+    </script>
+  </body>
+</html>
