@@ -56,9 +56,32 @@ func main() {
 }
 
 func onReady() {
-	if iconBytes, err := os.ReadFile(systrayIconPath); err != nil {
+	iconBytes, err := os.ReadFile(systrayIconPath)
+	if err != nil {
 		log.Printf("Could not load systray icon from %s: %v", systrayIconPath, err)
 	} else {
+		// COSMIC's status-area applet (v1.0.0) doesn't render icons when
+		// IconName is an absolute path. It also can't find themed icons
+		// in ~/.local/share/icons/hicolor/ unless that directory has an
+		// index.theme (required by the freedesktop icon spec).
+		//
+		// We write both the index.theme and the icon file here; the
+		// vendored systray C code calls app_indicator_set_icon with the
+		// themed name "ninjaprice" so COSMIC resolves it through its
+		// icon theme chain (Cosmic → Pop → hicolor).
+		hicolorDir := filepath.Join(os.Getenv("HOME"), ".local", "share", "icons", "hicolor")
+		iconThemeDir := filepath.Join(hicolorDir, "48x48", "apps")
+		indexTheme := "[Icon Theme]\nName=Hicolor\nComment=Fallback icon theme\nHidden=true\nDirectories=48x48/apps\n\n[48x48/apps]\nSize=48\nContext=Applications\nType=Threshold\n"
+
+		if err := os.MkdirAll(iconThemeDir, 0755); err != nil {
+			log.Printf("Could not create icon theme dir %s: %v", iconThemeDir, err)
+		} else if err := os.WriteFile(filepath.Join(hicolorDir, "index.theme"), []byte(indexTheme), 0644); err != nil {
+			log.Printf("Could not write index.theme: %v", err)
+		} else if err := os.WriteFile(filepath.Join(iconThemeDir, "ninjaprice.png"), iconBytes, 0644); err != nil {
+			log.Printf("Could not write themed icon: %v", err)
+		} else {
+			log.Println("Wrote themed icon for COSMIC panel")
+		}
 		systray.SetIcon(iconBytes)
 	}
 
