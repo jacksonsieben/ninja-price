@@ -3,6 +3,7 @@ package scraper
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -16,7 +17,15 @@ import (
 	"github.com/chromedp/chromedp"
 )
 
-const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+// The TLS profile fetchLight declares has to match what this claims to be:
+// a handshake fingerprinted as one Chrome version with a User-Agent naming
+// another is an inconsistency anti-bot scoring picks up on.
+const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+
+// acceptLanguage leads with Portuguese because the tracked stores are
+// Portuguese; a pt-PT visitor asking only for en-US is another small
+// inconsistency.
+const acceptLanguage = "pt-PT,pt;q=0.9,en;q=0.8"
 
 // ScrapePrice fetches the URL and extracts the price. It tries a lightweight
 // HTTP fetch first (fast, near-zero RAM) and only falls back to a full headless
@@ -26,9 +35,11 @@ const userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 
 func ScrapePrice(pageURL string, manualSelector string) (float64, string, error) {
 	host := hostFromURL(pageURL)
 
-	if doc, status, err := fetchLight(pageURL); err == nil && !isBotChallenge(status, doc) {
-		if price, source, ok := runExtractionChain(doc, host, manualSelector); ok {
-			return price, source, nil
+	for _, fetch := range []func(string) (*goquery.Document, int, error){fetchPlain, fetchLight} {
+		if doc, status, err := fetch(pageURL); err == nil && !isBotChallenge(status, doc) {
+			if price, source, ok := runExtractionChain(doc, host, manualSelector); ok {
+				return price, source, nil
+			}
 		}
 	}
 
@@ -50,7 +61,10 @@ func ScrapePrice(pageURL string, manualSelector string) (float64, string, error)
 func DetectPrice(pageURL string) (price float64, source string, name string, err error) {
 	host := hostFromURL(pageURL)
 
-	doc, status, ferr := fetchLight(pageURL)
+	doc, status, ferr := fetchPlain(pageURL)
+	if ferr != nil || isBotChallenge(status, doc) {
+		doc, status, ferr = fetchLight(pageURL)
+	}
 	if ferr != nil || isBotChallenge(status, doc) {
 		doc, ferr = fetchHeavy(pageURL, "")
 		if ferr != nil {
@@ -85,6 +99,40 @@ func runExtractionChain(doc *goquery.Document, host, manualSelector string) (flo
 	return 0, "", false
 }
 
+// fetchPlain performs a plain net/http GET, with no attempt to imitate a
+// browser's TLS handshake.
+//
+// Counter-intuitively this gets further than fetchLight on some stores.
+// Cloudflare scores the JA3 fingerprints of known fingerprint-mimicking
+// libraries with high confidence, so a request that advertises itself as Chrome
+// at the TLS layer can be challenged where an honest client is served normally
+// (chipman.pt and globaldata.pt both answer this with a full page and JSON-LD
+// prices, and neither disallows product pages in robots.txt). It is tried first
+// because it is also the cheapest of the three tiers.
+func fetchPlain(pageURL string) (*goquery.Document, int, error) {
+	client := &http.Client{Timeout: 15 * time.Second}
+
+	req, err := http.NewRequest(http.MethodGet, pageURL, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", acceptLanguage)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	doc, err := goquery.NewDocumentFromReader(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return doc, resp.StatusCode, nil
+}
+
 // fetchLight performs a plain HTTP GET using a browser-fingerprinted TLS
 // client (bogdanfinn/tls-client), which is enough to get past simple
 // anti-bot checks without paying for a headless browser launch.
@@ -103,7 +151,7 @@ func fetchLight(pageURL string) (*goquery.Document, int, error) {
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Accept-Language", acceptLanguage)
 
 	resp, err := client.Do(req)
 	if err != nil {
