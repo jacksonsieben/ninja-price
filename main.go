@@ -199,7 +199,7 @@ func checkPrices() {
 				sticky = product.Sticky
 			}
 			if title != "" {
-				notifier.Notify(title, msg, sticky)
+				notifier.Notify(title, msg, bestOffer.URL, sticky)
 				if product.NotifyEmail {
 					alert := notifier.PriceAlert{
 						ProductName: product.Name,
