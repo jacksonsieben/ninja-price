@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -20,6 +21,12 @@ import (
 // The TLS profile fetchLight declares has to match what this claims to be:
 // a handshake fingerprinted as one Chrome version with a User-Agent naming
 // another is an inconsistency anti-bot scoring picks up on.
+// ErrOutOfStock is returned when a page publishes a price but marks the offer
+// unavailable. The price is deliberately not reported: it would land in the
+// history as a figure nobody can pay, and the lowest-price tracking would then
+// measure every future check against a phantom low.
+var ErrOutOfStock = errors.New("offer is out of stock")
+
 const userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
 
 // acceptLanguage leads with Portuguese because the tracked stores are
@@ -37,7 +44,10 @@ func ScrapePrice(pageURL string, manualSelector string) (float64, string, error)
 
 	for _, fetch := range []func(string) (*goquery.Document, int, error){fetchPlain, fetchLight} {
 		if doc, status, err := fetch(pageURL); err == nil && !isBotChallenge(status, doc) {
-			if price, source, ok := runExtractionChain(doc, host, manualSelector); ok {
+			if price, source, inStock, ok := runExtractionChain(doc, host, manualSelector); ok {
+				if !inStock {
+					return 0, "", ErrOutOfStock
+				}
 				return price, source, nil
 			}
 		}
@@ -48,7 +58,10 @@ func ScrapePrice(pageURL string, manualSelector string) (float64, string, error)
 		return 0, "", fmt.Errorf("error scraping with headless browser: %v", err)
 	}
 
-	if price, source, ok := runExtractionChain(doc, host, manualSelector); ok {
+	if price, source, inStock, ok := runExtractionChain(doc, host, manualSelector); ok {
+		if !inStock {
+			return 0, "", ErrOutOfStock
+		}
 		return price, source, nil
 	}
 
@@ -72,9 +85,12 @@ func DetectPrice(pageURL string) (price float64, source string, name string, err
 		}
 	}
 
-	price, source, ok := runExtractionChain(doc, host, "")
+	price, source, inStock, ok := runExtractionChain(doc, host, "")
 	if !ok {
 		return 0, "", "", fmt.Errorf("could not auto-detect a price for %s", pageURL)
+	}
+	if !inStock {
+		return 0, "", pageTitle(doc), ErrOutOfStock
 	}
 
 	return price, source, pageTitle(doc), nil
@@ -83,20 +99,23 @@ func DetectPrice(pageURL string) (price float64, source string, name string, err
 // runExtractionChain tries, in order: an explicit manual selector, the
 // hardcoded known-site table, JSON-LD structured data, then meta tags. First
 // match wins.
-func runExtractionChain(doc *goquery.Document, host, manualSelector string) (float64, string, bool) {
+// The inStock result is only ever false for a json-ld match: it is the one
+// source that carries schema.org availability. The others cannot tell, and
+// report true so an undetectable stock state never suppresses a price.
+func runExtractionChain(doc *goquery.Document, host, manualSelector string) (price float64, source string, inStock bool, ok bool) {
 	if price, ok := extractSelector(doc, manualSelector); ok {
-		return price, "manual", true
+		return price, "manual", true, true
 	}
 	if price, ok := extractKnownSite(doc, host); ok {
-		return price, "known-site", true
+		return price, "known-site", true, true
 	}
-	if price, ok := extractJSONLD(doc); ok {
-		return price, "json-ld", true
+	if price, inStock, ok := extractJSONLD(doc); ok {
+		return price, "json-ld", inStock, true
 	}
 	if price, ok := extractMeta(doc); ok {
-		return price, "meta", true
+		return price, "meta", true, true
 	}
-	return 0, "", false
+	return 0, "", true, false
 }
 
 // fetchPlain performs a plain net/http GET, with no attempt to imitate a

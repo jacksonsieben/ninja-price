@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -153,7 +154,15 @@ func checkPrices() {
 			log.Printf("Checking %s (%s)...", product.Name, offer.Store)
 			price, source, err := scraper.ScrapePrice(offer.URL, offer.Selector)
 			if err != nil {
-				log.Printf("Failed to scrape %s (%s): %v", product.Name, offer.Store, err)
+				// Out of stock is a normal outcome, not a scrape failure: the
+				// price was read fine, it just cannot be bought, so the offer
+				// sits out this round rather than feeding the best-price
+				// comparison that drives alerts.
+				if errors.Is(err, scraper.ErrOutOfStock) {
+					log.Printf("Out of stock, ignoring %s (%s)", product.Name, offer.Store)
+				} else {
+					log.Printf("Failed to scrape %s (%s): %v", product.Name, offer.Store, err)
+				}
 				continue
 			}
 			log.Printf("Got price for %s (%s) via %s: %.2f", product.Name, offer.Store, source, price)

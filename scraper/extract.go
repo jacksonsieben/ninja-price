@@ -92,30 +92,47 @@ type jsonLDNode struct {
 }
 
 type jsonLDOffer struct {
-	Price interface{} `json:"price"`
+	Price        interface{} `json:"price"`
+	Availability string      `json:"availability"`
+}
+
+// purchasable reads schema.org's availability enumeration. Only the values that
+// mean "you cannot buy this right now" are rejected: PreOrder, BackOrder and
+// LimitedAvailability are left alone, since a store taking an order is a price
+// worth tracking. An absent or unrecognised value is treated as purchasable,
+// because most pages that omit it are simply in stock.
+func (o jsonLDOffer) purchasable() bool {
+	v := strings.ToLower(o.Availability)
+	if i := strings.LastIndex(v, "/"); i >= 0 {
+		v = v[i+1:]
+	}
+	v = strings.ReplaceAll(strings.ReplaceAll(v, "_", ""), "-", "")
+	switch v {
+	case "outofstock", "soldout", "discontinued":
+		return false
+	}
+	return true
 }
 
 // extractJSONLD looks for a schema.org Product's offer price inside any
 // application/ld+json script block. Most e-commerce platforms embed this for
 // Google Shopping / rich results, which makes it a reliable site-agnostic signal.
-func extractJSONLD(doc *goquery.Document) (float64, bool) {
-	var found float64
-	ok := false
+func extractJSONLD(doc *goquery.Document) (price float64, inStock bool, ok bool) {
+	found, stock, matched := 0.0, true, false
 	doc.Find(`script[type="application/ld+json"]`).EachWithBreak(func(_ int, s *goquery.Selection) bool {
-		if price, matched := parseJSONLDBlock(s.Text()); matched {
-			found = price
-			ok = true
+		if p, st, m := parseJSONLDBlock(s.Text()); m {
+			found, stock, matched = p, st, true
 			return false
 		}
 		return true
 	})
-	return found, ok
+	return found, stock, matched
 }
 
-func parseJSONLDBlock(raw string) (float64, bool) {
+func parseJSONLDBlock(raw string) (float64, bool, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return 0, false
+		return 0, true, false
 	}
 
 	var nodes []jsonLDNode
@@ -124,44 +141,50 @@ func parseJSONLDBlock(raw string) (float64, bool) {
 	if err := json.Unmarshal([]byte(raw), &single); err == nil {
 		nodes = append(nodes, single)
 	} else if err := json.Unmarshal([]byte(raw), &nodes); err != nil {
-		return 0, false
+		return 0, true, false
 	}
 
 	for _, n := range nodes {
-		if price, matched := priceFromNode(n); matched {
-			return price, true
+		if price, inStock, matched := priceFromNode(n); matched {
+			return price, inStock, true
 		}
 		for _, g := range n.Graph {
-			if price, matched := priceFromNode(g); matched {
-				return price, true
+			if price, inStock, matched := priceFromNode(g); matched {
+				return price, inStock, true
 			}
 		}
 	}
-	return 0, false
+	return 0, true, false
 }
 
-func priceFromNode(n jsonLDNode) (float64, bool) {
+func priceFromNode(n jsonLDNode) (float64, bool, bool) {
 	if !isProductType(n.Type) || len(n.Offers) == 0 {
-		return 0, false
+		return 0, true, false
 	}
 
 	var offer jsonLDOffer
 	if err := json.Unmarshal(n.Offers, &offer); err == nil && offer.Price != nil {
 		if price, ok := coercePrice(offer.Price); ok {
-			return price, true
+			return price, offer.purchasable(), true
 		}
 	}
 
 	var offers []jsonLDOffer
 	if err := json.Unmarshal(n.Offers, &offers); err == nil {
+		// Prefer a purchasable offer when a product lists several.
+		for _, o := range offers {
+			if price, ok := coercePrice(o.Price); ok && o.purchasable() {
+				return price, true, true
+			}
+		}
 		for _, o := range offers {
 			if price, ok := coercePrice(o.Price); ok {
-				return price, true
+				return price, false, true
 			}
 		}
 	}
 
-	return 0, false
+	return 0, true, false
 }
 
 func isProductType(raw json.RawMessage) bool {
