@@ -188,4 +188,43 @@ els.saveBtn.addEventListener("click", async () => {
   }
 });
 
+// --- Actualizar todos os preços ---------------------------------------------
+//
+// Opens every tracked offer in a background tab, reads the price the page
+// renders, reports it, and closes the tab. This is how the stores the tracker
+// process cannot fetch get updated: pcdiga.com and pccomponentes.pt answer 403
+// to every server-side client, so the only place their price exists is a real
+// browser session.
+const refreshBtn = document.getElementById("refresh-all-btn");
+const refreshStatus = document.getElementById("refresh-status");
+
+function paintRefresh(st) {
+  if (!st) return;
+  if (st.running) {
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = "A actualizar...";
+    refreshStatus.textContent = `${st.done}/${st.total} - ${st.reported} lidos, ${st.failed} sem preco`;
+    return;
+  }
+  refreshBtn.disabled = false;
+  refreshBtn.textContent = "Actualizar todos os preços";
+  if (st.total) {
+    refreshStatus.textContent = `${st.reported} de ${st.total} actualizados` + (st.failed ? `, ${st.failed} sem preco` : "");
+  }
+}
+
+refreshBtn.addEventListener("click", () => {
+  refreshStatus.textContent = "A abrir as páginas...";
+  chrome.runtime.sendMessage({ type: "NP_REFRESH_ALL" }, paintRefresh);
+  // The sweep outlives this popup if it is closed, so poll while it is open.
+  const poll = setInterval(() => {
+    chrome.runtime.sendMessage({ type: "NP_REFRESH_STATE" }, (st) => {
+      paintRefresh(st);
+      if (st && !st.running) clearInterval(poll);
+    });
+  }, 1000);
+});
+
+chrome.runtime.sendMessage({ type: "NP_REFRESH_STATE" }, paintRefresh);
+
 init();

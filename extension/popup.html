@@ -80,6 +80,17 @@
         background: #00c853;
         color: white;
       }
+      hr {
+        border: 0;
+        border-top: 1px solid #333;
+        margin: 12px 0 10px;
+      }
+      #refresh-status {
+        margin-top: 6px;
+        font-size: 11px;
+        opacity: 0.75;
+        min-height: 14px;
+      }
     </style>
   </head>
   <body>
@@ -117,6 +128,10 @@
 
     <button id="pick-btn" hidden>Escolher preço na página</button>
     <button id="find-elsewhere-btn" hidden>Encontrar noutras lojas</button>
+
+    <hr />
+    <button id="refresh-all-btn">Actualizar todos os preços</button>
+    <div id="refresh-status"></div>
 
     <script src="popup.js"></script>
   </body>

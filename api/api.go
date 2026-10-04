@@ -38,6 +38,8 @@ func (a *API) Start(port int) {
 	http.HandleFunc("/config", a.handleConfig)
 	http.HandleFunc("/detect", a.handleDetect)
 	http.HandleFunc("/discover", a.handleDiscover)
+	http.HandleFunc("/tracked", a.handleTracked)
+	http.HandleFunc("/report", a.handleReport)
 	http.HandleFunc("/products/{id}/offers", a.handleProductOffers)
 
 	http.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.Dir("assets"))))

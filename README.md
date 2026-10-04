@@ -1,7 +1,7 @@
 # NinjaPrice 🥷💵
 
 ![Go Version](https://img.shields.io/badge/Go-1.24+-00ADD8?style=flat&logo=go)
-![Platform](https://img.shields.io/badge/Platform-Linux%20%28Fedora%29-blue?style=flat&logo=linux)
+![Platform](https://img.shields.io/badge/Platform-Linux-blue?style=flat&logo=linux)
 ![License](https://img.shields.io/badge/License-MIT-green?style=flat)
 
 **NinjaPrice** is a personal shopping assistant designed specifically to run silently in the background of a Linux environment (focused on Fedora). Its main goal is to monitor product prices across various online stores, consuming the absolute minimum of system resources (RAM and CPU). It tracks a product across every store you add it to, and notifies you natively (and optionally by email) whenever the best price across those stores hits your target or drops.
@@ -33,6 +33,8 @@
 - **Automatic Price Detection:** No CSS selector required for most stores — NinjaPrice reads `schema.org` JSON-LD/meta price data that most e-commerce sites already publish, with a small hardcoded fallback table for outliers (like Amazon) that don't.
 - **Lightweight-first Scraping:** Tries a fast, low-RAM HTTP fetch first and only launches a full headless browser when a site's bot protection (Cloudflare, DataDome, etc.) requires it.
 - **Instant Price on Add:** Newly created products/offers are scraped immediately when added (via the extension, `discover.html`, or the API), so the dashboard shows a real price right away instead of waiting for the next hourly check.
+- **Browser-Reported Prices:** Some stores refuse every server-side client outright — `pcdiga.com` and `pccomponentes.pt` answer 403 to a plain HTTP request, challenge headless Chrome, and 403 even the sitemaps their own `robots.txt` advertises. For those, the extension reports the price the page renders in your own browser: automatically whenever you land on a tracked page, or for every tracked offer at once with **Actualizar todos os preços**. Reported prices go through exactly the same alert rules as scraped ones.
+- **Stock-Aware:** A sold-out listing still publishes its last price, so availability is read from the same `schema.org` data as the price and out-of-stock offers are skipped rather than recorded — otherwise an unbuyable figure lands in the history as the lowest ever seen and every later check is measured against a floor that never existed.
 - **Local Mini API & Browser Extension:** Add new products straight from your web browser using a small Manifest V3 extension that auto-detects the price, falling back to click-to-pick only when needed — and lets you either create a new product or attach the page as another offer on an existing one.
 - **Optional LLM-Assisted Discovery:** An on-demand "find this elsewhere" flow that asks a pluggable LLM provider to locate the same product on other stores, verifies every candidate through the same scraper pipeline before showing it to you, and never saves anything without your approval. Fully optional — manual mode works with zero LLM dependency.
 
@@ -43,11 +45,17 @@
 To compile and run NinjaPrice on Fedora Linux, you need:
 
 1. **Go (Golang)** >= 1.24
-2. **libnotify** (Usually pre-installed on Fedora for `notify-send`)
-3. **AppIndicator Development Libraries** (Required to compile the Go graphical systray tracker):
+2. **libnotify**, for `notify-send`
+3. **AppIndicator libraries**, which the vendored systray code links against:
    ```bash
+   # Fedora
    sudo dnf install libappindicator-gtk3-devel libayatana-appindicator-gtk3-devel
+   # Arch
+   sudo pacman -S libayatana-appindicator
    ```
+   The tray itself needs a StatusNotifierItem host in the session. GNOME needs
+   the AppIndicator extension; Hyprland setups get one from whatever serves the
+   bar (quickshell and Waybar both do).
 4. *(Optional, for LLM-assisted discovery only)* One of: the [Claude Code CLI](https://code.claude.com) already logged into a subscription (`claude_cli`, the default), an `ANTHROPIC_API_KEY` (`anthropic`), or a local/self-hosted OpenAI-compatible endpoint like Ollama or LM Studio (`openai_compatible`). See [LLM-Assisted Discovery](#-llm-assisted-discovery) below.
 
 ---
@@ -148,7 +156,8 @@ NinjaPrice exposes a lightweight local API on `http://localhost:65452`. The `ext
 4. Choose **Novo Produto** to track it as a brand-new product, or **Produto Existente** to attach this page as another store offer on a product you already track (picked from a dropdown).
 5. If the price is auto-detected, fill in the details and click **Salvar**. If it can't be auto-detected, click **Escolher preço na página** to click-to-pick the price element manually — the same new-vs-existing choice is available there too.
 6. The product/offer is pushed straight to `config.json`, scraped immediately for its first price, and shows up on the dashboard — no restart needed.
-7. If the current page is already tracked as an offer, a **Find elsewhere** button appears in the popup — it opens `discover.html` for that product so you can search for it on other stores (see below).
+7. **Actualizar todos os preços** opens every tracked offer in a background tab, reads the rendered price, reports it and closes the tab — sequentially, one store at a time. This is the only way the stores above get updated, and it is also the fastest way to refresh everything on demand instead of waiting for the hourly check.
+8. If the current page is already tracked as an offer, a **Find elsewhere** button appears in the popup — it opens `discover.html` for that product so you can search for it on other stores (see below).
 
 ---
 
@@ -183,6 +192,8 @@ If discovery ever comes back empty or fails, check the terminal/log output where
 - [x] Pluggable LLM-assisted store discovery.
 - [x] Email notifications via SMTP, opt-in per product.
 - [ ] Add history charting/visualizations for price variations over time.
+- [x] Browser-reported prices for stores that refuse server-side clients.
+- [x] Skip offers the page marks out of stock.
 - [ ] Implement robust error retry backoffs for rate-limited stores.
 
 ---

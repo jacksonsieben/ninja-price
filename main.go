@@ -2,7 +2,6 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -12,9 +11,9 @@ import (
 	"time"
 
 	"github.com/getlantern/systray"
+	"github.com/jacksonsieben/ninja-price/alert"
 	"github.com/jacksonsieben/ninja-price/api"
 	"github.com/jacksonsieben/ninja-price/config"
-	"github.com/jacksonsieben/ninja-price/notifier"
 	"github.com/jacksonsieben/ninja-price/scraper"
 	"github.com/jacksonsieben/ninja-price/storage"
 )
@@ -160,9 +159,23 @@ func checkPrices() {
 				// comparison that drives alerts.
 				if errors.Is(err, scraper.ErrOutOfStock) {
 					log.Printf("Out of stock, ignoring %s (%s)", product.Name, offer.Store)
-				} else {
-					log.Printf("Failed to scrape %s (%s): %v", product.Name, offer.Store, err)
+					continue
 				}
+				// Stores this process cannot read at all (pcdiga.com and
+				// pccomponentes.pt answer 403 to any server-side client) are
+				// refreshed by the browser extension instead. A price it
+				// reported recently still counts for the comparison, so those
+				// offers are not dead weight — it is just not re-recorded here,
+				// since nothing new was read.
+				if prev, ok := hist.Items[offer.ID]; ok && prev.LastPrice > 0 && time.Since(prev.LastChecked) < alert.StaleAfter {
+					log.Printf("Could not read %s (%s); using the %.2f reported %s ago",
+						product.Name, offer.Store, prev.LastPrice, time.Since(prev.LastChecked).Round(time.Minute))
+					if !haveBest || prev.LastPrice < bestPrice {
+						bestPrice, bestOffer, haveBest = prev.LastPrice, offer, true
+					}
+					continue
+				}
+				log.Printf("Failed to scrape %s (%s): %v", product.Name, offer.Store, err)
 				continue
 			}
 			log.Printf("Got price for %s (%s) via %s: %.2f", product.Name, offer.Store, source, price)
@@ -185,51 +198,8 @@ func checkPrices() {
 			continue // every offer failed to scrape this round
 		}
 
-		canNotify := time.Since(product.LastNotified) > time.Duration(cfg.CooldownPeriod)*time.Minute
-
-		// Check conditions for notifications, comparing against the best (lowest) price across all offers
-		if canNotify {
-			title, msg := "", ""
-			sticky := false
-			targetHit := false
-			if product.TargetPrice > 0 && bestPrice <= product.TargetPrice {
-				title = "Price Alert: " + product.Name
-				msg = fmt.Sprintf("Target price reached! Best price now %.2f", bestPrice)
-				// Target price reaching is important, we pass true to make it a sticky notification
-				sticky = product.Sticky
-				targetHit = true
-			} else if product.AlertAnyPriceDrop && havePreviousBest && bestPrice < previousBest {
-				diff := previousBest - bestPrice
-				title = "Price Drop: " + product.Name
-				msg = fmt.Sprintf("Price dropped by %.2f! Now %.2f", diff, bestPrice)
-				// Honor the product's sticky setting for drops too, not just
-				// target hits — otherwise a product marked sticky still got a
-				// transient (auto-dismissed) notification on a plain price drop.
-				sticky = product.Sticky
-			}
-			if title != "" {
-				notifier.Notify(title, msg, bestOffer.URL, sticky)
-				if product.NotifyEmail {
-					alert := notifier.PriceAlert{
-						ProductName: product.Name,
-						Store:       bestOffer.Store,
-						URL:         bestOffer.URL,
-						OldPrice:    previousBest,
-						HasOldPrice: havePreviousBest,
-						NewPrice:    bestPrice,
-						TargetPrice: product.TargetPrice,
-						TargetHit:   targetHit,
-					}
-					if err := notifier.SendPriceAlertEmail(cfg.SMTP, title, alert); err != nil {
-						log.Printf("Error sending email for %s: %v", product.Name, err)
-					}
-				}
-				log.Printf("Notification sent for %s. Best price: %.2f", product.Name, bestPrice)
-				if err := config.UpdateLastNotified(configPath, product.ID); err != nil {
-					log.Printf("Error updating last_notified for %s: %v", product.Name, err)
-				}
-			}
-		}
+		d := alert.Evaluate(product, cfg.CooldownPeriod, bestPrice, previousBest, havePreviousBest)
+		alert.Raise(configPath, cfg, product, d, bestOffer, bestPrice, previousBest, havePreviousBest)
 	}
 
 	if err := storage.SaveHistory(historyPath, hist); err != nil {
