@@ -2,7 +2,9 @@ package notifier
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"html/template"
 	"log"
@@ -83,10 +85,32 @@ func buildMessage(from, to, subject, htmlBody string) []byte {
 	fmt.Fprintf(&b, "From: %s\r\n", from)
 	fmt.Fprintf(&b, "To: %s\r\n", to)
 	fmt.Fprintf(&b, "Subject: %s\r\n", subject)
+	// RFC 5322 requires Date, and expects Message-ID. A receiving server will
+	// stamp a Date of its own when one is missing, but both absences are read
+	// as spam signals, which matters most for exactly this case: a new sending
+	// address whose first messages have no reputation to fall back on.
+	fmt.Fprintf(&b, "Date: %s\r\n", time.Now().Format(time.RFC1123Z))
+	fmt.Fprintf(&b, "Message-ID: <%s>\r\n", messageID(from))
 	b.WriteString("MIME-Version: 1.0\r\n")
 	b.WriteString("Content-Type: text/html; charset=\"utf-8\"\r\n\r\n")
 	b.WriteString(htmlBody)
 	return []byte(b.String())
+}
+
+// messageID builds a globally unique id whose domain matches the sender's, as
+// receivers expect. It falls back to a timestamp if the system's random source
+// is unavailable, which still beats having no Message-ID at all.
+func messageID(from string) string {
+	domain := "ninjaprice.local"
+	if at := strings.LastIndex(from, "@"); at >= 0 && at+1 < len(from) {
+		domain = strings.Trim(from[at+1:], "<> ")
+	}
+
+	buf := make([]byte, 16)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Sprintf("%d.ninjaprice@%s", time.Now().UnixNano(), domain)
+	}
+	return fmt.Sprintf("%s.ninjaprice@%s", hex.EncodeToString(buf), domain)
 }
 
 func sendImplicitTLS(addr, host string, auth smtp.Auth, from string, to []string, msg []byte) error {
