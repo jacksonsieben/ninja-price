@@ -5,3 +5,7 @@ ninjaprice
 
 config.json
 prices_history.json
+# Output of Chrome's "Pack extension". The .pem is the private signing key
+# for the extension's identity and must never be committed.
+extension.crx
+extension.pem
